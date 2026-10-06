@@ -1,0 +1,23 @@
+# API & Web
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# CLI
+typer
+
+# Machine Learning & Data
+pandas
+numpy
+scikit-learn
+joblib
+
+# Testing
+pytest
+httpx
+
+# Optional / Future integrations
+# mlflow
+# prometheus-client
+# sqlalchemy

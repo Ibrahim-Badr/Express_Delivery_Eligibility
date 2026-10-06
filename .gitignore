@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+dist/
+downloads/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables (Keep .env.example)
+.env
+.env.dev
+.env.test
+.env.prod
+
+# Testing & Tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Project Specific Data & Artifacts
+# Ignore all files in data/ except .gitkeep
+data/*
+!data/.gitkeep
+
+# Ignore all files in artifacts/ except .gitkeep
+artifacts/*
+!artifacts/.gitkeep
+
+# IDEs & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

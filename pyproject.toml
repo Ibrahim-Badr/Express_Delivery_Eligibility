@@ -1,0 +1,16 @@
+[project]
+name = "eligibilite-livraison-express"
+version = "0.1.0"
+description = "API de prédiction d'éligibilité à la livraison express"
+authors = [
+    { name = "Developer" }
+]
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "src"
+]
+testpaths = [
+    "tests"
+]
