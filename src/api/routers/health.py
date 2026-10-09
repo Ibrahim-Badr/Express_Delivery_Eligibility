@@ -6,11 +6,11 @@ from src.infra.abstractions.model_repository import ModelRepository
 
 router = APIRouter(tags=["health"])
 
-@router.get(//health/, response_model=HealthStatus)
+@router.get("/health", response_model=HealthStatus)
 async def get_health():
     return HealthStatus(status="ok", service=settings.app_name, version="1.0.0")
 
-@router.get(//health/ready/, response_model=ReadinessStatus)
+@router.get("/health/ready", response_model=ReadinessStatus)
 async def get_readiness(response: Response, model_repo: ModelRepository = Depends(get_model_repository)):
     if model_repo.is_available():
         return ReadinessStatus(

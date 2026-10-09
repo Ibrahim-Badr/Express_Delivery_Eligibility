@@ -1,14 +1,13 @@
 class DomainError(Exception):
-    pass
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
 
 class NotFoundError(DomainError):
-    def __init__(self, message: str):
-        self.message = message
+    pass
 
 class InvalidInputError(DomainError):
-    def __init__(self, message: str):
-        self.message = message
+    pass
 
 class ModelUnavailableError(DomainError):
-    def __init__(self, message: str):
-        self.message = message
+    pass
