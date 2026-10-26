@@ -26,6 +26,8 @@ env/
 # Local Databases & MLflow Artifacts
 *.db
 *.sqlite3
+local_databases/*
+!local_databases/.gitkeep
 mlruns/
 mlartifacts/
 

@@ -19,6 +19,7 @@ htmlcov
 # Local databases & MLflow runs
 *.db
 *.sqlite3
+local_databases
 mlruns
 mlartifacts
 

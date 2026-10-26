@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     model_version: str = "1.0.0"
     random_seed: int = 42
     log_level: str = "INFO"
-    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
+    mlflow_tracking_uri: str = "sqlite:///./local_databases/mlflow.db"
     mlflow_experiment_name: str = "livraison-express"
 
     model_config = SettingsConfigDict(

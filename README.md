@@ -30,6 +30,10 @@ Express_Delivery_Eligibility/
 │   └── features.json                       # Ordered list of model features
 ├── data/                                   # Local dataset directory
 │   └── raw_orders.csv                      # Synthetic orders dataset
+├── local_databases/                        # Local SQLite runtime databases (ignored by Git)
+│   ├── .gitkeep
+│   ├── local.db                            # Local application state (orders & prediction records)
+│   └── mlflow.db                           # Local MLflow experiment tracking & metrics database
 ├── docs/                                   # Collaboration, security & architectural documentation
 │   ├── CONTRIBUTING.md                     # GitFlow workflow, coding standards & PR guidelines
 │   ├── SECURITY.md                         # Security policy, vulnerability reporting & hardening practices

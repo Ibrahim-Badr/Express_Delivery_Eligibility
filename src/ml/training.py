@@ -4,6 +4,7 @@ import logging
 import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sklearn.model_selection import train_test_split
@@ -88,6 +89,9 @@ class MLTrainer:
             import mlflow.sklearn
 
             if settings.mlflow_tracking_uri:
+                if settings.mlflow_tracking_uri.startswith("sqlite:///"):
+                    db_path = settings.mlflow_tracking_uri.replace("sqlite:///", "")
+                    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
                 mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
             mlflow.set_experiment(settings.mlflow_experiment_name)
 
@@ -97,7 +101,11 @@ class MLTrainer:
                 mlflow.log_param("feature_count", len(FEATURE_COLUMNS))
                 for metric_name, metric_value in metrics.items():
                     mlflow.log_metric(metric_name, metric_value)
-                mlflow.sklearn.log_model(self.model_pipeline, artifact_path="model")
+                mlflow.sklearn.log_model(
+                    self.model_pipeline,
+                    name="model",
+                    skops_trusted_types=["numpy.dtype"],
+                )
                 return run.info.run_id
         except Exception as exc:
             logger.warning("MLflow tracking skipped: %s", exc)
