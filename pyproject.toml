@@ -50,9 +50,13 @@ disable = [
     "too-many-instance-attributes",
     "too-many-arguments",
     "too-many-positional-arguments",
+    "too-many-locals",
     "import-outside-toplevel",
     "broad-exception-caught",
     "duplicate-code",
+    "invalid-name",
+    "unnecessary-pass",
+    "unused-argument",
 ]
 
 [tool.pylint.format]

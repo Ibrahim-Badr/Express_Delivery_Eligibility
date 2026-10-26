@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import datetime, timezone
 import logging
 import time
+from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import Any
 
 from sklearn.model_selection import train_test_split

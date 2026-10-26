@@ -1,6 +1,8 @@
-from typing import Literal, Optional, List, Dict, Any
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
 
 class OrderFeatures(BaseModel):
     order_id: Optional[str] = None
@@ -16,12 +18,14 @@ class OrderFeatures(BaseModel):
     weather: Literal["normal", "pluie", "neige", "orage"]
     delivery_zone: Literal["centre", "proche_banlieue", "banlieue", "rurale"]
     customer_type: Literal["standard", "premium"]
-    
+
     model_config = {"extra": "forbid"}
+
 
 class OrderAccepted(BaseModel):
     order_id: str
     status: Literal["accepted"]
+
 
 class Prediction(BaseModel):
     order_id: str
@@ -32,12 +36,15 @@ class Prediction(BaseModel):
     predicted_at: datetime
     latency_ms: Optional[float] = None
 
+
 class BatchPredictionRequest(BaseModel):
     orders: List[OrderFeatures] = Field(..., min_length=1, max_length=1000)
+
 
 class BatchPredictionResponse(BaseModel):
     predictions: List[Prediction]
     count: int
+
 
 class ModelCard(BaseModel):
     project: str
@@ -51,15 +58,18 @@ class ModelCard(BaseModel):
     metrics: Dict[str, float]
     limitations: Optional[List[str]] = None
 
+
 class HealthStatus(BaseModel):
     status: Literal["ok"]
     service: str
     version: str
 
+
 class ReadinessStatus(BaseModel):
     status: Literal["ready", "not_ready"]
     checks: Dict[str, str]
     version: Optional[str] = None
+
 
 class ErrorResponse(BaseModel):
     error: str

@@ -1,5 +1,7 @@
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from src.infra.abstractions.prediction_store import PredictionStore
+
 
 class MemoryPredictionStore(PredictionStore):
     def __init__(self):
