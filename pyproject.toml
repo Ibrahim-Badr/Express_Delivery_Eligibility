@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eligibilite-livraison-express"
 version = "0.1.0"
-description = "API de prédiction d'éligibilité à la livraison express"
+description = "Express Delivery Eligibility Prediction API"
 authors = [
     { name = "Developer" }
 ]
@@ -32,7 +32,28 @@ testpaths = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["notebooks", "Project_correction"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.pylint.main]
+ignore = ["notebooks", "tests"]
+fail-under = 8.0
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "too-many-instance-attributes",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "import-outside-toplevel",
+    "broad-exception-caught",
+    "duplicate-code",
+]
+
+[tool.pylint.format]
+max-line-length = 100

@@ -1,0 +1,36 @@
+# Git & CI
+.git
+.gitignore
+.github
+
+# Virtual environments & caches
+.venv
+venv
+ENV
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Local databases & MLflow runs
+*.db
+*.sqlite3
+mlruns
+mlartifacts
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation, Notebooks & Tests (not needed in production container)
+docs
+notebooks
+tests
+README.md
+LICENSE
+openapi.yml

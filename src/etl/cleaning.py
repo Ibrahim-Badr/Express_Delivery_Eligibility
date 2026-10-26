@@ -1,9 +1,8 @@
 import pandas as pd
 
+
 def validate_dataset(df: pd.DataFrame) -> bool:
-    """
-    Contrôles de qualité élémentaires sur les données d'entrée.
-    """
+    """Perform elementary data quality checks on the input dataset."""
     required_columns = {
         "order_id",
         "order_date",
@@ -26,59 +25,57 @@ def validate_dataset(df: pd.DataFrame) -> bool:
 
     if missing_columns:
         raise ValueError(
-            f"Colonnes obligatoires absentes : {sorted(missing_columns)}"
+            f"Missing required columns: {sorted(missing_columns)}"
         )
 
     if df["order_id"].duplicated().any():
-        raise ValueError("Des identifiants de commande sont dupliqués.")
+        raise ValueError("Duplicate order_id values found.")
 
     if df["express_eligible"].isna().any():
-        raise ValueError("La variable cible contient des valeurs manquantes.")
+        raise ValueError("Target variable contains missing values.")
 
     if not df["hour"].between(0, 23).all():
-        raise ValueError("Certaines heures sont invalides.")
+        raise ValueError("Invalid hour values detected.")
 
     if not df["distance_km"].ge(0).all():
-        raise ValueError("La distance ne peut pas être négative.")
+        raise ValueError("Distance cannot be negative.")
 
     if not df["weight_kg"].ge(0).all():
-        raise ValueError("Le poids ne peut pas être négatif.")
+        raise ValueError("Weight cannot be negative.")
 
     if not df["preparation_time_min"].ge(0).all():
-        raise ValueError("Le temps de préparation ne peut pas être négatif.")
+        raise ValueError("Preparation time cannot be negative.")
 
     if not df["carrier_capacity"].between(0, 1).all():
         raise ValueError(
-            "La capacité du transporteur doit être comprise entre 0 et 1."
+            "Carrier capacity must be between 0 and 1."
         )
 
     if not df["stock_available"].isin([0, 1]).all():
         raise ValueError(
-            "La variable stock_available doit contenir uniquement 0 ou 1."
+            "The stock_available variable must only contain 0 or 1."
         )
 
     return True
 
 
 def clean_orders_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Nettoyage automatique des données.
-    """
+    """Automatically clean raw order data."""
     cleaned = df.copy()
 
-    # Suppression des doublons sur l'identifiant métier
+    # Remove duplicates on the business identifier
     cleaned = cleaned.drop_duplicates(
         subset=["order_id"],
-        keep="last"
+        keep="last",
     )
 
-    # Conversion des dates
+    # Convert date strings to datetime
     cleaned["order_date"] = pd.to_datetime(
         cleaned["order_date"],
-        errors="coerce"
+        errors="coerce",
     )
 
-    # Suppression des lignes dont les champs essentiels sont invalides
+    # Drop rows with missing essential fields
     essential_columns = [
         "order_id",
         "distance_km",
@@ -91,7 +88,7 @@ def clean_orders_data(df: pd.DataFrame) -> pd.DataFrame:
 
     cleaned = cleaned.dropna(subset=essential_columns)
 
-    # Bornage des valeurs numériques
+    # Enforce numeric bounds
     cleaned = cleaned[cleaned["distance_km"] >= 0]
     cleaned = cleaned[cleaned["weight_kg"] >= 0]
     cleaned = cleaned[cleaned["preparation_time_min"] >= 0]

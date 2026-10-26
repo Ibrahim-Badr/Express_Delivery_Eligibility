@@ -1,0 +1,12 @@
+# Production Runtime Dependencies (Lightweight image without dev/training-heavy tooling)
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+typer
+pandas
+numpy
+scikit-learn
+joblib
+sqlalchemy
+psycopg2-binary

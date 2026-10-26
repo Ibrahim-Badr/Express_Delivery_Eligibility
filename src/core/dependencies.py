@@ -6,7 +6,7 @@ from src.infra.abstractions.prediction_store import PredictionStore
 from src.infra.local.file_model_repository import FileModelRepository
 from src.infra.local.memory_order_store import MemoryOrderStore
 
-# Instances uniques des adaptateurs
+# Singleton adapter instances
 _order_store = MemoryOrderStore()
 _model_repository = FileModelRepository()
 

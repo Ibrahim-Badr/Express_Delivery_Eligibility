@@ -20,17 +20,17 @@ from src.infra.abstractions.prediction_store import PredictionStore
 app = FastAPI(
     title=settings.app_name,
     version=settings.model_version,
-    description="API de prédiction d'éligibilité à la livraison express",
+    description="Express Delivery Eligibility Prediction REST API",
 )
 
-# Enregistrement des gestionnaires d'erreurs
+# Register custom exception handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(NotFoundError, not_found_handler)
 app.add_exception_handler(InvalidInputError, invalid_input_handler)
 app.add_exception_handler(ModelUnavailableError, model_unavailable_handler)
 app.add_exception_handler(Exception, global_exception_handler)
 
-# Enregistrement des routeurs
+# Register API routers
 app.include_router(health.router)
 app.include_router(orders.router)
 app.include_router(predictions.router)
@@ -49,7 +49,7 @@ async def predict_root_alias(
     model_repo: ModelRepository = Depends(get_model_repository),
     pred_store: PredictionStore = Depends(get_prediction_store),
 ):
-    """Root alias for POST /v1/predictions matching the professor's lite endpoint."""
+    """Root alias for POST /v1/predictions."""
     return await predictions.create_prediction(
         order=order,
         model_repo=model_repo,

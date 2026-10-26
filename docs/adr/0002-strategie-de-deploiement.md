@@ -1,21 +1,21 @@
-# ADR 0002 : Stratégie de déploiement et gestion des environnements
+# ADR 0002: Deployment Strategy and Environment Management
 
-## Contexte
-L'application doit évoluer à travers trois environnements distincts : Dev, Test, et Prod. Il faut une stratégie robuste pour provisionner l'infrastructure et déployer le code de manière automatisée, sans intervention manuelle risquée.
+## Context
+The application must progress through three isolated environments (`Dev`, `Test`, and `Prod`). We need a reliable strategy to provision cloud infrastructure and deploy application updates automatically without error-prone manual steps.
 
-## Décision
-Nous adopterons l'approche **Infrastructure as Code (IaC)** combinée à l'**Intégration et Déploiement Continus (CI/CD)** :
-1. **Infrastructure (IaC)** : Utilisation de **Terraform**. Cela permet de créer, modifier et détruire (pour économiser le budget) les ressources Azure avec une simple commande.
-2. **CI/CD** : Utilisation de **GitHub Actions**. Les workflows automatiseront les tests (Pytest) et le déploiement.
-3. **Stratégie de branches** :
-   * La branche `develop` déploiera sur l'environnement de **Dev**.
-   * La branche `release` déploiera sur l'environnement de **Test**.
-   * La branche `main` déploiera sur l'environnement de **Prod**.
+## Decision
+We adopt **Infrastructure as Code (IaC)** combined with **Continuous Integration and Continuous Deployment (CI/CD)**:
+1. **Infrastructure (IaC)**: Use **Terraform** to create, update, and destroy Azure resources deterministically with a single command (`terraform apply` / `terraform destroy`).
+2. **CI/CD**: Use **GitHub Actions** to automate linting (`ruff`), testing (`pytest`), Docker image builds, and deployment.
+3. **Branching Strategy**:
+   * The `develop` branch deploys to the **Dev** environment.
+   * The `release` branch deploys to the **Test** environment.
+   * The `main` branch deploys to the **Prod** environment.
 
-## Conséquences
-* **Positives** : 
-  * Environnements 100% reproductibles.
-  * Déploiements fiables et automatisés.
-  * Protection du budget étudiant grâce à la facilité de destruction de l'infrastructure (`terraform destroy`).
-* **Négatives** : 
-  * Courbe d'apprentissage initiale pour configurer Terraform et GitHub Actions.
+## Consequences
+* **Positive**:
+  * 100% reproducible infrastructure and deployments.
+  * Automated quality gates before any code reaches production.
+  * Student budget protection through one-command teardown (`terraform destroy`).
+* **Negative**:
+  * Initial setup overhead for Terraform state and GitHub Actions secrets/environments.

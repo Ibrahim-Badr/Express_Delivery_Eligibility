@@ -18,6 +18,7 @@ mlflow
 pytest
 httpx
 ruff
+pylint
 
 # Database & Infrastructure
 sqlalchemy

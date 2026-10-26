@@ -18,6 +18,10 @@ This project transforms an experimental Jupyter Notebook into a modular, maintai
 
 ```text
 Express_Delivery_Eligibility/
+├── .github/
+│   └── workflows/                          # Automated CI/CD pipelines (GitHub Actions)
+│       ├── ci.yml                          # Linting (Ruff + Pylint) & automated tests (Pytest)
+│       └── release-docker.yml              # Automated Docker build, compression & push to GHCR on release
 ├── artifacts/                              # Generated model artifacts (created by train job)
 │   ├── express_delivery_model.joblib       # Trained scikit-learn Pipeline (preprocessor + classifier)
 │   ├── pipeline.pkl                        # Legacy-compatible pipeline artifact
@@ -26,7 +30,10 @@ Express_Delivery_Eligibility/
 │   └── features.json                       # Ordered list of model features
 ├── data/                                   # Local dataset directory
 │   └── raw_orders.csv                      # Synthetic orders dataset
-├── docs/
+├── docs/                                   # Collaboration, security & architectural documentation
+│   ├── CONTRIBUTING.md                     # GitFlow workflow, coding standards & PR guidelines
+│   ├── SECURITY.md                         # Security policy, vulnerability reporting & hardening practices
+│   ├── CODE_OF_CONDUCT.md                  # Contributor Covenant Code of Conduct
 │   └── adr/                                # Architecture Decision Records (ADRs)
 │       ├── 0001-choix-plateforme-de-deploiement.md
 │       ├── 0002-strategie-de-deploiement.md
@@ -91,13 +98,16 @@ Express_Delivery_Eligibility/
 │   │   └── test_repositories.py            # Contract tests for OrderStore, PredictionStore & FileModelRepository
 │   └── api/
 │       └── test_api.py                     # FastAPI endpoint tests (200, 202, 422, 503)
+├── .dockerignore                           # Excludes non-production files from Docker build context
 ├── .env.example                            # Example environment variables template
-├── Dockerfile                              # Production container image definition
+├── Dockerfile                              # Hardened 2-stage production container image (non-root user)
 ├── docker-compose.yml                      # Multi-container local setup (FastAPI + PostgreSQL 15)
+├── LICENSE                                 # MIT License
 ├── openapi.yml                             # OpenAPI 3.1 specification contract
 ├── order.json                              # Sample order payload for CLI and HTTP testing
-├── pyproject.toml                          # Package metadata, Pytest & Ruff linter configuration
-└── requirements.txt                        # Python dependencies
+├── pyproject.toml                          # Package metadata, Pytest, Ruff & Pylint configuration
+├── requirements.txt                        # Full development & CI dependencies
+└── requirements-prod.txt                   # Lightweight production runtime dependencies
 ```
 
 ---

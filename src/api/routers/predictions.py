@@ -26,7 +26,7 @@ async def create_prediction(
     pred_store: PredictionStore = Depends(get_prediction_store),
 ):
     if not model_repo.is_available():
-        raise ModelUnavailableError("Le modèle n'est pas disponible.")
+        raise ModelUnavailableError("The ML model is currently unavailable.")
 
     pipeline = model_repo.load_pipeline()
     order_id = order.order_id or f"CMD-{uuid.uuid4().hex[:6]}"
@@ -59,7 +59,7 @@ async def create_batch_predictions(
     pred_store: PredictionStore = Depends(get_prediction_store),
 ):
     if not model_repo.is_available():
-        raise ModelUnavailableError("Le modèle n'est pas disponible.")
+        raise ModelUnavailableError("The ML model is currently unavailable.")
 
     pipeline = model_repo.load_pipeline()
     predictions = []
@@ -95,5 +95,5 @@ async def get_prediction(
 ):
     prediction = pred_store.get(order_id)
     if not prediction:
-        raise NotFoundError(f"Prédiction pour la commande {order_id} introuvable")
+        raise NotFoundError(f"Prediction for order {order_id} not found")
     return Prediction(**prediction)

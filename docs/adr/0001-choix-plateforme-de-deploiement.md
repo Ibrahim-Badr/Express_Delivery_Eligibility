@@ -1,18 +1,18 @@
-# ADR 0001 : Choix de la plateforme de déploiement
+# ADR 0001: Deployment Platform Choice
 
-## Contexte
-L'application d'éligibilité à la livraison express doit être mise en production. Il est nécessaire de choisir entre un hébergement On-Premise, Local, ou Cloud. 
-Nous disposons d'un budget étudiant strict sur Microsoft Azure (88 $) mais avec un accès à plusieurs services gratuits pendant 12 mois (notamment 750 heures/mois pour une VM Linux et 750 heures/mois pour Azure Database for PostgreSQL).
+## Context
+The Express Delivery Eligibility application needs to be deployed to production. We must choose between an On-Premise, Local, or Cloud hosting environment.
+We have a strict student budget on Microsoft Azure ($88 credit) along with free 12-month tier allocations for several core services (notably 750 hours/month for a Linux VM and 750 hours/month for Azure Database for PostgreSQL).
 
-## Décision
-Nous avons décidé de déployer l'application sur le **Cloud (Microsoft Azure)**, en utilisant une architecture hybride IaaS / PaaS :
-1. **Compute (IaaS)** : Une machine virtuelle **Azure Linux VM (B2ats v2)**. Elle hébergera l'application FastAPI conteneurisée avec Docker.
-2. **Base de données (PaaS)** : **Azure Database for PostgreSQL (Flexible Server)**. Plutôt que de gérer la base de données nous-mêmes dans la VM, nous déléguons sa gestion (sauvegardes, haute disponibilité) à Azure, profitant de l'instance B1MS gratuite.
+## Decision
+We decided to deploy the application on the **Cloud (Microsoft Azure)** using a hybrid IaaS / PaaS architecture:
+1. **Compute (IaaS)**: An **Azure Linux VM (`B2ats v2`)** hosting the containerized FastAPI application via Docker.
+2. **Database (PaaS)**: **Azure Database for PostgreSQL (Flexible Server)**. Instead of self-managing the database inside the VM, we delegate database administration (automated backups, patching, high availability) to Azure using the free `B1MS` burstable tier.
 
-## Conséquences
-* **Positives** : 
-  * Coût nul (0 $) grâce à l'utilisation optimale des quotas gratuits étudiants.
-  * Architecture professionnelle et évolutive (Cloud-native).
-  * Séparation claire entre le calcul (VM) et le stockage (PaaS).
-* **Négatives** : 
-  * Nécessite une gestion rigoureuse (via Terraform) pour allumer/éteindre les ressources et éviter les dépassements de forfait.
+## Consequences
+* **Positive**:
+  * Zero monthly cost ($0) by staying within the free student tier quotas.
+  * Cloud-native, scalable production architecture.
+  * Clear separation of concerns between stateless compute (VM) and managed storage (PaaS).
+* **Negative**:
+  * Requires disciplined lifecycle management (via Terraform) to stop or destroy resources when not in use so free quotas are preserved.

@@ -16,7 +16,7 @@ def test_validate_dataset_valid():
 def test_validate_dataset_rejects_duplicates():
     df = generate_orders_dataset(n_rows=10, random_state=42)
     df_dup = pd.concat([df, df.iloc[[0]]], ignore_index=True)
-    with pytest.raises(ValueError, match="dupliqués"):
+    with pytest.raises(ValueError, match="Duplicate"):
         validate_dataset(df_dup)
 
 

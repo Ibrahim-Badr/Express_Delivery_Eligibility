@@ -1,23 +1,22 @@
-# ADR 0003 : Sécurisation des entrées/sorties et de l'accès aux données
+# ADR 0003: Input/Output Validation and Data Access Security
 
-## Contexte
-L'API REST va recevoir des requêtes externes pour évaluer l'éligibilité des commandes et devra se connecter à une base de données distante (PostgreSQL sur Azure). Il est crucial de prévenir les injections, de garantir l'intégrité des données entrantes, et de protéger les identifiants d'accès.
+## Context
+The REST API receives external HTTP requests to evaluate order eligibility and connects to a remote database (PostgreSQL on Azure). It is critical to prevent injection attacks, enforce strict input contracts, and protect database credentials.
 
-## Décision
-Nous appliquerons le principe de défense en profondeur :
+## Decision
+We apply defense-in-depth across two layers:
 
-**1. Sécurisation des Entrées et Sorties**
-* Utilisation du framework **FastAPI** couplé à **Pydantic**.
-* Chaque requête (JSON) est strictement validée par les schémas Pydantic (ex: `OrderFeatures`). Si un type est incorrect ou qu'une valeur est hors limites (ex: `carrier_capacity` > 1.0), l'API rejette la requête (Erreur 422 Unprocessable Entity) avant même d'atteindre la logique métier ou le modèle ML.
+### 1. Input and Output Security
+* Use **FastAPI** coupled with **Pydantic** schemas (`OrderFeatures`, `Prediction`, `BatchPredictionRequest`).
+* Every incoming JSON payload is strictly validated against type and domain constraints (e.g., `hour` between `0` and `23`, `carrier_capacity` between `0.0` and `1.0`, `extra="forbid"`). Invalid requests are immediately rejected with `HTTP 422 Unprocessable Entity` before reaching the business logic or ML pipeline.
 
-**2. Sécurisation de l'accès à la donnée**
-* **Aucun secret dans le code** : Les chaînes de connexion (URL de la base de données PostgreSQL, mots de passe) ne seront jamais versionnées dans Git.
-* Utilisation d'**Azure Key Vault** : Les identifiants seront stockés de manière sécurisée dans un coffre-fort numérique sur Azure.
-* L'application (via ses variables d'environnement injectées par GitHub Actions ou récupérées au runtime) lira ces secrets dynamiquement.
+### 2. Data Access Security
+* **Zero secrets in source control**: Database connection strings (`DATABASE_URL`) and passwords are never committed to Git.
+* **Azure Key Vault**: Production secrets and credentials are stored securely in Azure Key Vault and injected at runtime via environment variables or Managed Identities.
 
-## Conséquences
-* **Positives** : 
-  * L'API est immunisée contre de nombreuses failles courantes grâce à la validation stricte.
-  * Les risques de fuite de mots de passe sur GitHub sont éliminés.
-* **Négatives** : 
-  * Complexité légèrement accrue pour configurer l'accès entre la VM, GitHub Actions et Azure Key Vault (gestion des identités gérées - Managed Identities).
+## Consequences
+* **Positive**:
+  * Strong protection against malformed payloads and injection attacks before model inference.
+  * Eliminates the risk of credential leaks in public GitHub repositories.
+* **Negative**:
+  * Requires configuring access policies / Managed Identities between the Azure VM, GitHub Actions, and Azure Key Vault.

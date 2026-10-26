@@ -9,32 +9,32 @@ from src.ml.data_generation import generate_orders_dataset
 from src.ml.predictor import MLPredict
 from src.ml.training import train
 
-app = typer.Typer(help="CLI pour les tâches ML et l'exploitation du service")
+app = typer.Typer(help="CLI for ML tasks and service operations")
 
 
 @app.command("generate-data")
 def generate_data_cmd(n_rows: int = 6000, random_state: int = 42):
-    """Générer un jeu de données synthétique sous data/raw_orders.csv."""
-    typer.echo(f"Génération de {n_rows} commandes...")
+    """Generate a synthetic dataset at data/raw_orders.csv."""
+    typer.echo(f"Generating {n_rows} orders...")
     df = generate_orders_dataset(n_rows, random_state)
     Path("data").mkdir(exist_ok=True)
     df.to_csv("data/raw_orders.csv", index=False)
-    typer.echo("Terminé ! Fichier sauvegardé sous data/raw_orders.csv")
+    typer.echo("Done! Dataset saved to data/raw_orders.csv")
 
 
 @app.command("train")
 def train_cmd():
-    """Entraîner le modèle et sauvegarder les artefacts via ModelRepository."""
-    typer.echo("Lancement de l'entraînement du modèle...")
+    """Train the ML model and persist artifacts via ModelRepository."""
+    typer.echo("Starting model training...")
     model_card = train()
     typer.echo(
-        f"Entraînement terminé ! (ROC AUC = {model_card.metrics.get('roc_auc')})"
+        f"Training complete! (ROC AUC = {model_card.metrics.get('roc_auc')})"
     )
 
 
 @app.command("serve")
 def serve_cmd(host: str = "127.0.0.1", port: int = 8000):
-    """Démarrer le serveur API FastAPI avec Uvicorn."""
+    """Start the FastAPI HTTP server using Uvicorn."""
     import uvicorn
 
     from src.main import app as fastapi_app
@@ -50,13 +50,13 @@ def predict_cmd(
         "-f",
         exists=True,
         readable=True,
-        help="Fichier JSON contenant une commande.",
+        help="Path to a JSON file containing order features.",
     ),
 ):
-    """Prédire l'éligibilité d'une commande lue depuis un fichier JSON."""
+    """Predict express delivery eligibility for an order read from a JSON file."""
     repo = get_model_repository()
     if not repo.is_available():
-        typer.echo("Erreur : modèle indisponible. Lancez 'train' d'abord.", err=True)
+        typer.echo("Error: Model is unavailable. Run 'train' first.", err=True)
         raise typer.Exit(code=1)
 
     payload = json.loads(file.read_text(encoding="utf-8"))
