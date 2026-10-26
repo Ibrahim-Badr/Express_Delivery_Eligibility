@@ -19,7 +19,7 @@ from src.domain.entities import OrderEntity
 
 
 def orders_to_dataframe(orders: Sequence[OrderEntity | Mapping[str, Any]]) -> pd.DataFrame:
-    """Convert a sequence of OrderEntity objects or dicts into a DataFrame matching FEATURE_COLUMNS."""
+    """Convert OrderEntity objects or dicts into a DataFrame matching FEATURE_COLUMNS."""
     rows: list[dict[str, Any]] = []
     for order in orders:
         raw = order.to_dict() if isinstance(order, OrderEntity) else dict(order)

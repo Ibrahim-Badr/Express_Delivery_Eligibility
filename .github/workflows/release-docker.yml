@@ -44,7 +44,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Build image locally for vulnerability scanning
         uses: docker/build-push-action@v6
@@ -63,10 +63,10 @@ jobs:
           format: "table"
           exit-code: "0"
           ignore-unfixed: true
-          vuln-type: "os,library"
+          pkg-types: "os,library"
           severity: "CRITICAL,HIGH"
 
-      - name: Push compressed production Docker image to GHCR
+      - name: Push production Docker image to GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -75,4 +75,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          outputs: type=registry,compression=gzip,force-compression=true
+          provenance: false

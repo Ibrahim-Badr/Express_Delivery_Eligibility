@@ -39,7 +39,9 @@ class FileModelRepository(ModelRepository):
 
     def save(self, pipeline: Any, model_card: ModelEntity | Dict[str, Any]) -> None:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
-        card_dict = model_card.to_dict() if isinstance(model_card, ModelEntity) else dict(model_card)
+        card_dict = (
+            model_card.to_dict() if isinstance(model_card, ModelEntity) else dict(model_card)
+        )
 
         joblib.dump(pipeline, self.model_joblib_path)
         joblib.dump(pipeline, self.legacy_pipeline_path)
