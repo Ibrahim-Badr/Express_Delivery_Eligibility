@@ -12,12 +12,13 @@ pandas
 numpy
 scikit-learn
 joblib
+mlflow
 
-# Testing
+# Testing & Quality
 pytest
 httpx
+ruff
 
-# Optional / Future integrations
-# mlflow
-# prometheus-client
-# sqlalchemy
+# Database & Infrastructure
+sqlalchemy
+psycopg2-binary
