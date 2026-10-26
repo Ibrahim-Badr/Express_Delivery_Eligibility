@@ -165,11 +165,19 @@ Once the server is running (`python -m src.cli serve`), interactive documentatio
 
 ## 5. Running with Docker & PostgreSQL
 
+The [`docker-compose.yml`](docker-compose.yml) orchestrates **3 separated containers** following the MLOps principle of separating Training from Serving:
+
+1. **`express_delivery_db` (`db`)**: Stateful PostgreSQL 15 database (`localhost:5432`) with persistent volume `postgres_data`.
+2. **`express_delivery_trainer` (`trainer`)**: One-shot ML batch job (`python -m src.cli train`) that generates/cleans data, trains the pipeline, writes model artifacts to the shared `model_artifacts` volume, and exits cleanly.
+3. **`express_delivery_api` (`api`)**: Stateless FastAPI server (`http://localhost:8000`) that starts only after `db` is healthy and `trainer` completes (`service_completed_successfully`), mounting `model_artifacts` as read-only (`:ro`).
+
 ```bash
+# Build and start all services
 docker-compose up -d --build
+
+# Re-run the ML training job on demand without rebuilding
+docker-compose run --rm trainer
 ```
-- **API**: `http://localhost:8000`
-- **PostgreSQL 15**: `localhost:5432` (`DATABASE_URL=postgresql://user:password@db:5432/express_delivery`)
 
 ---
 
