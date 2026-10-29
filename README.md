@@ -181,15 +181,114 @@ docker-compose run --rm trainer
 
 ---
 
-## 6. Testing & Code Quality
+## 6. Complete Local Testing Guide (All Layers)
 
+### Layer 1: Automated Unit & Contract Tests (Pytest)
+Run all 18 automated unit, contract, and integration tests:
 ```bash
-# Run unit, contract, and API tests
-pytest -v
-
-# Run Ruff linter
-ruff check .
+python -m pytest -v
 ```
+
+Run specific test modules:
+```bash
+# Infrastructure and Repository contracts (PostgresOrderRepository, MemoryOrderStore, ModelRepository)
+python -m pytest tests/infra/test_repositories.py -v
+
+# ETL pipeline, data cleaning, legacy schema migration imputation, category harmonization
+python -m pytest tests/etl/test_cleaning.py -v
+
+# ML training, train/test stratified splitter, decision thresholds, and MLflow logging
+python -m pytest tests/ml/test_ml.py -v
+
+# FastAPI REST API endpoints, liveness/readiness probes, and 422/503 exception handlers
+python -m pytest tests/api/test_api.py -v
+```
+
+### Layer 2: Machine Learning Training (CLI)
+Execute the complete data loading, ETL cleaning, model fitting, and artifact export pipeline:
+```bash
+python -m src.cli train
+```
+* **Inputs**: Historical order stream from `PostgresOrderRepository` (or local dataset generator fallback).
+* **Outputs**: Production artifacts saved in `artifacts/` (`express_delivery_model.joblib`, `metrics.json`, `features.json`, `model_card.json`) and run metrics tracked in MLflow.
+
+### Layer 3: Offline Model Prediction (CLI)
+Evaluate eligibility directly from a JSON order payload without running the web server:
+```bash
+python -m src.cli predict --file order.json
+```
+Output:
+```json
+{
+  "express_eligible": true,
+  "decision": "oui",
+  "probability": 0.9376,
+  "model_version": "1.0.0",
+  "prediction_timestamp": "...",
+  "order_id": null,
+  "latency_ms": null
+}
+```
+
+### Layer 4: Running the Live FastAPI REST API Server
+Start the local development server with auto-reload:
+```bash
+python -m uvicorn src.main:app --reload --port 8000
+# Or via CLI helper:
+python -m src.cli serve --host 127.0.0.1 --port 8000
+```
+* **Interactive OpenAPI Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+* **ReDoc Documentation**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+
+### Layer 5: Testing API Endpoints via PowerShell or cURL
+In a second terminal, execute HTTP requests against the running service:
+
+#### A. Health and Readiness Checks
+```powershell
+# Liveness probe (HTTP 200)
+Invoke-RestMethod -Uri http://127.0.0.1:8000/health -Method GET
+
+# Readiness probe (HTTP 200 when model is loaded, HTTP 503 if unavailable)
+Invoke-RestMethod -Uri http://127.0.0.1:8000/health/ready -Method GET
+```
+
+#### B. Synchronous Model Inference (`/predict` & `/v1/predictions`)
+```powershell
+# Root alias prediction
+Invoke-RestMethod -Uri http://127.0.0.1:8000/predict `
+  -Method POST `
+  -ContentType "application/json" `
+  -InFile order.json
+
+# Versioned prediction with storage persistence
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/predictions `
+  -Method POST `
+  -ContentType "application/json" `
+  -InFile order.json
+```
+
+#### C. Asynchronous Order Submission (`/v1/orders`)
+```powershell
+# Post order for asynchronous background processing (HTTP 202 Accepted)
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/orders `
+  -Method POST `
+  -ContentType "application/json" `
+  -InFile order.json
+```
+
+#### D. Model Card & Governance Metadata (`/v1/model`)
+```powershell
+# Retrieve active model card, performance metrics, and governance limitations
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/model -Method GET
+```
+
+### Layer 6: MLflow Experiment Tracking Dashboard
+To visualize model runs, ROC-AUC metrics, and hyperparameter comparisons in the browser:
+```bash
+# Note: Use 'python -m mlflow' to bypass Windows launcher path issues
+python -m mlflow ui --backend-store-uri sqlite:///./local_databases/mlflow.db --port 5000
+```
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000) to view experiment metrics and artifacts.
 
 ---
 
@@ -198,3 +297,4 @@ ruff check .
 - [ADR 0001 - Deployment Platform Choice (Azure Hybrid IaaS/PaaS)](docs/adr/0001-choix-plateforme-de-deploiement.md)
 - [ADR 0002 - Deployment Strategy & Environments (Terraform + GitHub Actions)](docs/adr/0002-strategie-de-deploiement.md)
 - [ADR 0003 - I/O Validation & Data Access Security (Pydantic + Azure Key Vault)](docs/adr/0003-securite-entrees-sorties-et-donnees.md)
+- [ADR 0004 - Data Source Database Selection (PostgreSQL vs. MongoDB)](docs/adr/0004-choix-base-de-donnees-source-commandes.md)

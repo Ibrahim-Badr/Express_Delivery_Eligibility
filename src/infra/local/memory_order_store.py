@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from src.core.config import settings
 from src.domain.entities import OrderEntity
 from src.etl.cleaning import clean_orders_data, validate_dataset
-from src.infra.abstractions.order_store import OrderStore
+from src.infra.abstractions.order_repository import OrderRepository
 from src.ml.data_generation import generate_orders_dataset
 
 
-class MemoryOrderStore(OrderStore):
+class MemoryOrderStore(OrderRepository):
+    """In-memory order store and repository for local development and unit tests."""
+
     def __init__(self, data_path: str | Path = "data/raw_orders.csv"):
         self._orders: Dict[str, Dict[str, Any]] = {}
         self._data_path = Path(data_path)
@@ -22,6 +24,15 @@ class MemoryOrderStore(OrderStore):
 
     def get(self, order_id: str) -> Optional[Dict[str, Any]]:
         return self._orders.get(order_id)
+
+    def get_all(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        orders = list(self._orders.values())
+        if limit is not None:
+            return orders[:limit]
+        return orders
+
+    def count(self) -> int:
+        return len(self._orders)
 
     def get_training_data(self) -> tuple[list[OrderEntity], list[int]]:
         if self._data_path.exists():
@@ -57,3 +68,9 @@ class MemoryOrderStore(OrderStore):
             labels.append(int(row["express_eligible"]))
 
         return orders, labels
+
+
+# Alias conforming to classroom architecture diagram
+InMemoryOrderRepository = MemoryOrderStore
+
+__all__ = ["MemoryOrderStore", "InMemoryOrderRepository"]

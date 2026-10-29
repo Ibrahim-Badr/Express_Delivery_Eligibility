@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from src.domain.entities import OrderEntity
+from src.infra.abstractions.order_repository import OrderRepository
 
 
-class OrderStore(ABC):
-    @abstractmethod
-    def save(self, order_id: str, order_data: Dict[str, Any]) -> None:
-        pass
+class OrderStore(OrderRepository):
+    """Alias and backward-compatible abstract base class for OrderRepository."""
 
-    @abstractmethod
-    def get(self, order_id: str) -> Optional[Dict[str, Any]]:
-        pass
+    def get_all(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        return []
 
-    @abstractmethod
-    def get_training_data(self) -> tuple[list[OrderEntity], list[int]]:
-        """Retrieve cleaned order entities and their binary target labels for training."""
-        pass
+    def count(self) -> int:
+        return 0
+
+
+__all__ = ["OrderStore", "OrderRepository", "OrderEntity"]
