@@ -4,10 +4,13 @@ from pathlib import Path
 import typer
 
 from src.core.dependencies import get_model_repository
+from src.core.logging import setup_logging
 from src.domain.entities import OrderEntity
 from src.ml.data_generation import generate_orders_dataset
 from src.ml.predictor import MLPredict
 from src.ml.training import train
+
+setup_logging()
 
 app = typer.Typer(help="CLI for ML tasks and service operations")
 
@@ -64,6 +67,37 @@ def predict_cmd(
     predictor = MLPredict(pipeline=repo.load_pipeline())
     result = predictor.predict(order)
     typer.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+
+
+@app.command("retrain-daemon")
+def retrain_daemon_cmd(
+    interval_seconds: float = 30.0,
+    min_new_orders: int = 50,
+):
+    """Start continuous background model retraining orchestrator."""
+    from src.orchestration.retraining import RetrainingOrchestrator
+
+    typer.echo(
+        f"Starting retraining orchestrator (interval={interval_seconds}s, "
+        f"threshold={min_new_orders})..."
+    )
+    orchestrator = RetrainingOrchestrator()
+    orchestrator.run_daemon_loop(
+        interval_seconds=interval_seconds, min_new_orders=min_new_orders
+    )
+
+
+@app.command("retrain-check")
+def retrain_check_cmd(min_new_orders: int = 50):
+    """One-shot check if sufficient new orders exist and retrain model."""
+    from src.orchestration.retraining import RetrainingOrchestrator
+
+    orchestrator = RetrainingOrchestrator()
+    promoted = orchestrator.trigger_retrain_if_needed(min_new_orders=min_new_orders)
+    if promoted:
+        typer.echo("Retraining succeeded and model was updated.")
+    else:
+        typer.echo("No retraining needed or criteria not met.")
 
 
 if __name__ == "__main__":

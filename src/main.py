@@ -14,8 +14,11 @@ from src.api.schemas import OrderFeatures, Prediction
 from src.core.config import settings
 from src.core.dependencies import get_model_repository, get_prediction_store
 from src.core.errors import InvalidInputError, ModelUnavailableError, NotFoundError
+from src.core.logging import setup_logging
 from src.infra.abstractions.model_repository import ModelRepository
 from src.infra.abstractions.prediction_store import PredictionStore
+
+setup_logging()
 
 app = FastAPI(
     title=settings.app_name,

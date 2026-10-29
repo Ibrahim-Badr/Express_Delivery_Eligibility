@@ -17,7 +17,6 @@ class FileModelRepository(ModelRepository):
     def __init__(self, artifacts_dir: str | Path | None = None):
         self.artifacts_dir = Path(artifacts_dir or settings.artifacts_dir)
         self.model_joblib_path = self.artifacts_dir / "express_delivery_model.joblib"
-        self.legacy_pipeline_path = self.artifacts_dir / "pipeline.pkl"
         self.model_card_path = self.artifacts_dir / "model_card.json"
         self.metrics_path = self.artifacts_dir / "metrics.json"
         self.features_path = self.artifacts_dir / "features.json"
@@ -25,17 +24,10 @@ class FileModelRepository(ModelRepository):
         self._pipeline: Any = None
         self._model_card: Dict[str, Any] | None = None
 
-    def _resolve_pipeline_path(self) -> Path | None:
-        if self.model_joblib_path.exists():
-            return self.model_joblib_path
-        if self.legacy_pipeline_path.exists():
-            return self.legacy_pipeline_path
-        return None
-
     def is_available(self) -> bool:
         if self._pipeline is not None and self._model_card is not None:
             return True
-        return self._resolve_pipeline_path() is not None and self.model_card_path.exists()
+        return self.model_joblib_path.exists() and self.model_card_path.exists()
 
     def save(self, pipeline: Any, model_card: ModelEntity | Dict[str, Any]) -> None:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -44,7 +36,6 @@ class FileModelRepository(ModelRepository):
         )
 
         joblib.dump(pipeline, self.model_joblib_path)
-        joblib.dump(pipeline, self.legacy_pipeline_path)
 
         self.model_card_path.write_text(json.dumps(card_dict, indent=2), encoding="utf-8")
         self.metrics_path.write_text(
@@ -61,10 +52,9 @@ class FileModelRepository(ModelRepository):
 
     def load_pipeline(self) -> Any:
         if self._pipeline is None:
-            path = self._resolve_pipeline_path()
-            if path is None:
+            if not self.model_joblib_path.exists():
                 raise FileNotFoundError("Model pipeline artifact not found.")
-            self._pipeline = joblib.load(path)
+            self._pipeline = joblib.load(self.model_joblib_path)
         return self._pipeline
 
     def load_model_card(self) -> Dict[str, Any]:

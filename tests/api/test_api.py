@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from src.core.dependencies import (
     get_model_repository,
-    get_order_store,
+    get_order_repository,
     get_prediction_store,
 )
 from src.infra.local.memory_order_store import MemoryOrderStore
@@ -18,7 +18,7 @@ def _create_client(model_available: bool = True) -> TestClient:
     order_store = MemoryOrderStore()
     pred_store = MemoryPredictionStore()
     app.dependency_overrides[get_model_repository] = lambda: model_repo
-    app.dependency_overrides[get_order_store] = lambda: order_store
+    app.dependency_overrides[get_order_repository] = lambda: order_store
     app.dependency_overrides[get_prediction_store] = lambda: pred_store
     return TestClient(app)
 

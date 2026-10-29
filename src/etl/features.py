@@ -27,6 +27,32 @@ def orders_to_dataframe(orders: Sequence[OrderEntity | Mapping[str, Any]]) -> pd
     return pd.DataFrame(rows, columns=FEATURE_COLUMNS)
 
 
+def dataframe_to_training_entities(df: pd.DataFrame) -> tuple[list[OrderEntity], list[int]]:
+    """Convert a cleaned DataFrame with labels into OrderEntity objects and binary targets."""
+    orders: list[OrderEntity] = []
+    labels: list[int] = []
+    for row in df.to_dict(orient="records"):
+        orders.append(
+            OrderEntity(
+                order_id=str(row.get("order_id")) if row.get("order_id") is not None else None,
+                hour=int(row["hour"]),
+                day_of_week=int(row["day_of_week"]),
+                weekend=int(row["weekend"]),
+                distance_km=float(row["distance_km"]),
+                order_value_eur=float(row["order_value_eur"]),
+                weight_kg=float(row["weight_kg"]),
+                stock_available=int(row["stock_available"]),
+                preparation_time_min=float(row["preparation_time_min"]),
+                carrier_capacity=float(row["carrier_capacity"]),
+                weather=str(row["weather"]),
+                delivery_zone=str(row["delivery_zone"]),
+                customer_type=str(row["customer_type"]),
+            )
+        )
+        labels.append(int(row["express_eligible"]))
+    return orders, labels
+
+
 def get_preprocessor() -> ColumnTransformer:
     """Creates the data cleaning and feature engineering transformer."""
     numeric_transformer = Pipeline(

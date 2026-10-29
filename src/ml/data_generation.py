@@ -3,6 +3,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.etl.cleaning import compute_ground_truth_labels
+
 
 def generate_orders_dataset(n_rows: int = 6000, random_state: int = 42) -> pd.DataFrame:
     """Generate a synthetic dataset representing e-commerce orders."""
@@ -43,29 +45,7 @@ def generate_orders_dataset(n_rows: int = 6000, random_state: int = 42) -> pd.Da
         }
     )
 
-    zone_penalty = data["delivery_zone"].map(
-        {"centre": 0, "proche_banlieue": 0.10, "banlieue": 0.25, "rurale": 0.45}
-    )
-    weather_penalty = data["weather"].map(
-        {"normal": 0, "pluie": 0.10, "neige": 0.25, "orage": 0.30}
-    )
-    customer_bonus = (data["customer_type"] == "premium").astype(int) * 0.15
-
-    score = (
-        2.5
-        - 0.18 * data["distance_km"]
-        - 0.035 * data["preparation_time_min"]
-        - 0.035 * data["weight_kg"]
-        - zone_penalty
-        - weather_penalty
-        + 1.8 * data["stock_available"]
-        + 1.3 * data["carrier_capacity"]
-        + customer_bonus
-        - 0.40 * data["weekend"]
-        - 0.08 * np.maximum(data["hour"] - 18, 0)
-    )
-    probability = 1 / (1 + np.exp(-score))
-    data["express_eligible"] = rng.binomial(1, probability)
+    data["express_eligible"] = compute_ground_truth_labels(data, random_state=random_state)
     return data
 
 

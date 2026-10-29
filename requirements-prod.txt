@@ -1,4 +1,4 @@
-# Production Runtime Dependencies (Lightweight image without dev/training-heavy tooling)
+# Production Runtime Dependencies (Serving & Continuous Retraining)
 fastapi
 uvicorn[standard]
 pydantic
@@ -10,3 +10,4 @@ scikit-learn
 joblib
 sqlalchemy
 psycopg2-binary
+mlflow

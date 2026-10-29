@@ -1,0 +1,90 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PostgreSQL Database Service (Test Instance on port 5433)
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:17-alpine
+    container_name: express_delivery_db_test
+    environment:
+      POSTGRES_DB: livraison_express
+      POSTGRES_USER: livraison
+      POSTGRES_PASSWORD: livraison
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livraison -d livraison_express"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # 2. ERP Simulator (Bounded dataset for fast test execution)
+  # ----------------------------------------------------------------------------
+  erp-simulator:
+    build:
+      context: ./erp
+      dockerfile: Dockerfile
+    container_name: express_delivery_erp_test
+    environment:
+      POSTGRES_DSN: postgresql://livraison:livraison@db:5432/livraison_express
+      BATCH_SIZE: 10
+      INTERVAL_SECONDS: 1
+      POSTGRES_HISTORY_ORDERS: 100
+      RECENT_HISTORY_ORDERS: 50
+      LIVE_ORDER_LIMIT: 150
+      LOG_LEVEL: INFO
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ----------------------------------------------------------------------------
+  # 3. Model Training Job (Trains on newly ingested PostgreSQL data)
+  # ----------------------------------------------------------------------------
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: express_delivery_trainer_test
+    command: ["python", "-m", "src.cli", "train"]
+    environment:
+      - ENVIRONMENT=test
+      - DATABASE_URL=postgresql://livraison:livraison@db:5432/livraison_express
+      - ARTIFACTS_DIR=/app/artifacts
+    volumes:
+      - test_model_artifacts:/app/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ----------------------------------------------------------------------------
+  # 4. Test Runner Service (Executes full automated test suite inside container)
+  # ----------------------------------------------------------------------------
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_DEV: "true"
+    container_name: express_delivery_test_runner
+    command: ["python", "-m", "pytest", "-v"]
+    environment:
+      - ENVIRONMENT=test
+      - DATABASE_URL=postgresql://livraison:livraison@db:5432/livraison_express
+      - ARTIFACTS_DIR=/app/artifacts
+    volumes:
+      - test_model_artifacts:/app/artifacts:ro
+      - ./tests:/app/tests:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    depends_on:
+      trainer:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  test_postgres_data:
+  test_model_artifacts:

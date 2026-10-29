@@ -14,7 +14,7 @@ from src.core.constants import FEATURE_COLUMNS
 from src.domain.entities import ModelEntity, OrderEntity
 from src.etl.features import orders_to_dataframe
 from src.infra.abstractions.model_repository import ModelRepository
-from src.infra.abstractions.order_store import OrderStore
+from src.infra.abstractions.order_repository import OrderRepository
 from src.ml.evaluation import compute_classification_metrics
 from src.ml.pipeline import MLPipeline
 
@@ -113,13 +113,13 @@ class MLTrainer:
 
 
 def train(
-    order_store: OrderStore | None = None,
+    order_store: OrderRepository | None = None,
     model_repo: ModelRepository | None = None,
 ) -> ModelEntity:
-    """End-to-end training job using OrderStore and ModelRepository abstractions."""
-    from src.core.dependencies import get_model_repository, get_order_store
+    """End-to-end training job using OrderRepository and ModelRepository abstractions."""
+    from src.core.dependencies import get_model_repository, get_order_repository
 
-    store = order_store or get_order_store()
+    store = order_store or get_order_repository()
     repo = model_repo or get_model_repository()
 
     orders, labels = store.get_training_data()
@@ -136,7 +136,7 @@ def train(
         features=list(FEATURE_COLUMNS),
         metrics=metrics,
         trained_at=datetime.now(timezone.utc),
-        limitations=["Trained on synthetic data"],
+        limitations=["Trained on historical ERP & synthetic order data"],
     )
     repo.save(trainer.model_pipeline, model_card)
     logger.info("Training complete. Model and metadata saved via ModelRepository.")

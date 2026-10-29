@@ -8,8 +8,8 @@ Production-ready Machine Learning application and REST API that predicts whether
 
 This project transforms an experimental Jupyter Notebook into a modular, maintainable application following **Clean Architecture** and **SOLID / DRY / YAGNI** principles:
 
-- **Separation of Training & Serving**: Model training is executed as an offline CLI job (`python -m src.cli train`), never via an HTTP endpoint. The FastAPI server loads the serialized model artifact once and serves low-latency predictions.
-- **Dependency Inversion (Ports & Adapters)**: High-level application logic (`api/`, `ml/`) depends solely on abstract contracts (`OrderStore`, `ModelRepository`, `PredictionStore`) defined in `src/infra/abstractions/`. Concrete adapters (`MemoryOrderStore`, `FileModelRepository`, `MemoryPredictionStore`, `PostgresPredictionStore`) are wired in `src/core/dependencies.py`.
+- **Separation of Training & Serving**: Model training is executed as an independent execution process (`python -m src.cli train` or `orchestrator` daemon), never during image build or via an HTTP endpoint. The FastAPI server loads the serialized model artifact and serves low-latency predictions.
+- **Dependency Inversion (Ports & Adapters)**: High-level application logic (`api/`, `ml/`, `orchestration/`) depends solely on abstract contracts (`OrderRepository`, `ModelRepository`, `PredictionStore`) defined in `src/infra/abstractions/`. Concrete adapters (`PostgresOrderRepository`, `MemoryOrderStore`, `FileModelRepository`, `MemoryPredictionStore`, `PostgresPredictionStore`) are wired in `src/core/dependencies.py`.
 - **Single Feature Contract**: `FEATURE_COLUMNS` in `src/core/constants.py` and `orders_to_dataframe()` in `src/etl/features.py` guarantee identical column ordering between training and inference.
 
 ---
@@ -24,12 +24,19 @@ Express_Delivery_Eligibility/
 │       └── release-docker.yml              # Automated Docker build, compression & push to GHCR on release
 ├── artifacts/                              # Generated model artifacts (created by train job)
 │   ├── express_delivery_model.joblib       # Trained scikit-learn Pipeline (preprocessor + classifier)
-│   ├── pipeline.pkl                        # Legacy-compatible pipeline artifact
 │   ├── model_card.json                     # Full model metadata and evaluation metrics
 │   ├── metrics.json                        # Accuracy, Precision, Recall, F1, ROC AUC
 │   └── features.json                       # Ordered list of model features
 ├── data/                                   # Local dataset directory
 │   └── raw_orders.csv                      # Synthetic orders dataset
+├── erp/                                    # Self-contained ERP Simulator ("ERP Pro 2015")
+│   ├── Dockerfile                          # Container definition for the ERP order generator
+│   ├── requirements.txt                    # Simulator dependencies (psycopg[binary])
+│   ├── config.py                           # Simulator environment settings
+│   ├── erp_simulator.py                    # Main simulator entrypoint (historical + live stream)
+│   ├── generator.py                        # Order generation with legacy 2015/2017 schema shifts
+│   ├── simulator.py                        # Batching and orchestration logic
+│   └── storage.py                          # PostgreSQL writer and schema migrations
 ├── local_databases/                        # Local SQLite runtime databases (ignored by Git)
 │   ├── .gitkeep
 │   ├── local.db                            # Local application state (orders & prediction records)
@@ -41,13 +48,14 @@ Express_Delivery_Eligibility/
 │   └── adr/                                # Architecture Decision Records (ADRs)
 │       ├── 0001-choix-plateforme-de-deploiement.md
 │       ├── 0002-strategie-de-deploiement.md
-│       └── 0003-securite-entrees-sorties-et-donnees.md
+│       ├── 0003-securite-entrees-sorties-et-donnees.md
+│       └── 0004-choix-base-de-donnees-source-commandes.md
 ├── notebooks/
 │   └── project_test_v1_final_final2.ipynb  # Original experimental notebook
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                             # FastAPI application entrypoint & router registration
-│   ├── cli.py                              # CLI entrypoint (train, serve, predict, generate-data)
+│   ├── cli.py                              # CLI entrypoint (train, serve, predict, retrain-daemon)
 │   ├── domain/                             # Core business entities (framework-independent)
 │   │   ├── __init__.py
 │   │   └── entities.py                     # Immutable dataclasses: OrderEntity, PredictionEntity, ModelEntity
@@ -60,27 +68,31 @@ Express_Delivery_Eligibility/
 │   │   └── logging.py                      # Application logging setup
 │   ├── etl/                                # Data validation, cleaning & feature engineering
 │   │   ├── __init__.py
-│   │   ├── cleaning.py                     # validate_dataset() and clean_orders_data()
-│   │   └── features.py                     # orders_to_dataframe() and scikit-learn ColumnTransformer
+│   │   ├── cleaning.py                     # validate_dataset(), clean_orders_data() & ERP imputation
+│   │   └── features.py                     # orders_to_dataframe(), dataframe_to_training_entities() & ColumnTransformer
 │   ├── ml/                                 # Machine Learning pipeline, training, evaluation & inference
 │   │   ├── __init__.py
 │   │   ├── data_generation.py              # Reproducible synthetic order generator
 │   │   ├── pipeline.py                     # MLPipeline (Imputer + StandardScaler/OneHot + LogisticRegression)
 │   │   ├── training.py                     # TrainTestSplitter, MLTrainer (with MLflow logging) & train()
-│   │   ├── evaluation.py                   # Classification metrics & ModelCard builder
+│   │   ├── evaluation.py                   # Classification metrics computation
 │   │   └── predictor.py                    # MLPredict service with configurable decision threshold
+│   ├── orchestration/                      # MLOps Continuous Retraining Orchestrator
+│   │   ├── __init__.py
+│   │   └── retraining.py                   # RetrainingOrchestrator daemon & candidate validation
 │   ├── infra/                              # Infrastructure layer (Ports & Adapters)
 │   │   ├── __init__.py
 │   │   ├── abstractions/                   # Abstract interfaces (Ports)
 │   │   │   ├── model_repository.py         # ModelRepository ABC
-│   │   │   ├── order_store.py              # OrderStore ABC
+│   │   │   ├── order_repository.py         # OrderRepository ABC
 │   │   │   └── prediction_store.py         # PredictionStore ABC
 │   │   ├── local/                          # Local / In-memory implementations (Dev & Test adapters)
 │   │   │   ├── file_model_repository.py    # Local filesystem joblib & JSON model repository
-│   │   │   ├── memory_order_store.py       # In-memory order store & training data loader
+│   │   │   ├── memory_order_store.py       # InMemoryOrderRepository / MemoryOrderStore
 │   │   │   └── memory_prediction_store.py  # In-memory prediction store
 │   │   └── database/                       # SQL database implementations (Prod adapter)
 │   │       ├── database.py                 # SQLAlchemy engine & session factory
+│   │       ├── postgres_order_repository.py# PostgreSQL OrderRepository adapter for ERP orders
 │   │       └── postgres_prediction_store.py# PostgreSQL / SQLAlchemy prediction store
 │   └── api/                                # HTTP Presentation layer (FastAPI)
 │       ├── __init__.py
@@ -92,20 +104,23 @@ Express_Delivery_Eligibility/
 │           ├── orders.py                   # POST /v1/orders & GET /v1/orders/{order_id}
 │           ├── predictions.py              # POST /v1/predictions, /batch, GET /v1/predictions/{order_id}
 │           └── model.py                    # GET /v1/model
-├── tests/                                  # Automated Pytest suite
+├── tests/                                  # Automated Pytest suite (20 tests)
 │   ├── conftest.py                         # Shared fixtures, FakePipeline & FakeModelRepository
 │   ├── etl/
 │   │   └── test_cleaning.py                # Unit tests for dataset validation, cleaning & feature contract
 │   ├── ml/
 │   │   └── test_ml.py                      # Unit tests for MLPredict thresholds, splitter & MLTrainer
+│   ├── orchestration/
+│   │   └── test_retraining.py              # Unit tests for RetrainingOrchestrator promotion & rejection
 │   ├── infra/
-│   │   └── test_repositories.py            # Contract tests for OrderStore, PredictionStore & FileModelRepository
+│   │   └── test_repositories.py            # Contract tests for OrderRepository, PredictionStore & FileModelRepository
 │   └── api/
 │       └── test_api.py                     # FastAPI endpoint tests (200, 202, 422, 503)
 ├── .dockerignore                           # Excludes non-production files from Docker build context
 ├── .env.example                            # Example environment variables template
 ├── Dockerfile                              # Hardened 2-stage production container image (non-root user)
-├── docker-compose.yml                      # Multi-container local setup (FastAPI + PostgreSQL 15)
+├── docker-compose.test.yml                 # Automated containerized test environment (Postgres + ERP + Trainer + Pytest)
+├── docker-compose.prod.yml                 # Production environment (Postgres + ERP + Trainer + FastAPI + Orchestrator)
 ├── LICENSE                                 # MIT License
 ├── openapi.yml                             # OpenAPI 3.1 specification contract
 ├── order.json                              # Sample order payload for CLI and HTTP testing
@@ -163,21 +178,50 @@ Once the server is running (`python -m src.cli serve`), interactive documentatio
 
 ---
 
-## 5. Running with Docker & PostgreSQL
+## 5. Running with Docker & PostgreSQL (Test & Prod Environments)
 
-The [`docker-compose.yml`](docker-compose.yml) orchestrates **3 separated containers** following the MLOps principle of separating Training from Serving:
+Following the project requirements, two dedicated Docker Compose environments are provided:
 
-1. **`express_delivery_db` (`db`)**: Stateful PostgreSQL 15 database (`localhost:5432`) with persistent volume `postgres_data`.
-2. **`express_delivery_trainer` (`trainer`)**: One-shot ML batch job (`python -m src.cli train`) that generates/cleans data, trains the pipeline, writes model artifacts to the shared `model_artifacts` volume, and exits cleanly.
-3. **`express_delivery_api` (`api`)**: Stateless FastAPI server (`http://localhost:8000`) that starts only after `db` is healthy and `trainer` completes (`service_completed_successfully`), mounting `model_artifacts` as read-only (`:ro`).
+### A. Test Environment (`docker-compose.test.yml`)
+The test environment runs against a lightweight, bounded test database (`port 5433:5432`) to validate ERP data ingestion, model training, and automated test execution inside containers:
 
 ```bash
-# Build and start all services
-docker-compose up -d --build
+# Start the test environment (Postgres, bounded ERP simulator, Trainer, and automated Test Runner)
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 
-# Re-run the ML training job on demand without rebuilding
-docker-compose run --rm trainer
+# Teardown and reset test volumes
+docker compose -f docker-compose.test.yml down -v
 ```
+
+Services orchestrated:
+1. **`db` (`postgres:17-alpine`)**: Test database `livraison_express` on port `5433`.
+2. **`erp-simulator`**: Populates bounded historical orders (100 orders) and a small live stream.
+3. **`trainer`**: Trains the model on the newly ingested PostgreSQL data and exports artifacts.
+4. **`test-runner`**: Runs the complete `pytest` test suite against the live test database.
+
+---
+
+### B. Production Environment (`docker-compose.prod.yml`)
+The production environment operates 24/7 with the full ERP live stream, model inference API, and continuous retraining orchestrator:
+
+```bash
+# Build and launch production stack in detached mode
+docker compose -f docker-compose.prod.yml up -d --build
+
+# View logs from all services (or specifically erp-simulator / orchestrator)
+docker compose -f docker-compose.prod.yml logs -f erp-simulator
+docker compose -f docker-compose.prod.yml logs -f orchestrator
+
+# Stop production stack
+docker compose -f docker-compose.prod.yml down
+```
+
+Services orchestrated:
+1. **`db` (`postgres:17-alpine`)**: Stateful production ERP database on port `5432` with persistent volume `prod_postgres_data`.
+2. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds.
+3. **`trainer`**: Initial training batch job that prepares model artifacts before API launch.
+4. **`api` (`FastAPI`)**: Stateless prediction API running as non-root `appuser` on port `8000`.
+5. **`orchestrator`**: Continuous background daemon monitoring PostgreSQL order growth, triggering automated retraining when 50+ new orders arrive, and validating model performance (ROC-AUC $\ge 0.70$) before promoting artifacts.
 
 ---
 

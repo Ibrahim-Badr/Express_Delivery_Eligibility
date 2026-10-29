@@ -1,7 +1,9 @@
 # ==============================================================================
-# Stage 1: Builder (Compiles dependencies & baseline ML artifacts)
+# Stage 1: Builder (Compiles Python virtual environment & dependencies)
 # ==============================================================================
 FROM python:3.11-slim AS builder
+
+ARG INSTALL_DEV=false
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -16,20 +18,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create an isolated virtual environment and install production dependencies
+# Create an isolated virtual environment and install dependencies
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements-prod.txt .
-RUN pip install --no-cache-dir -r requirements-prod.txt
-
-# Copy source code and pre-train baseline artifacts so the image is self-contained
-COPY src/ ./src/
-RUN python -m src.cli train \
+COPY requirements-prod.txt requirements.txt ./
+RUN if [ "$INSTALL_DEV" = "true" ]; then \
+        pip install --no-cache-dir -r requirements.txt; \
+    else \
+        pip install --no-cache-dir -r requirements-prod.txt; \
+    fi \
     && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
+COPY src/ ./src/
+
 # ==============================================================================
-# Stage 2: Hardened Production Runtime (Used by both 'trainer' and 'api' services)
+# Stage 2: Hardened Runtime (Used by 'trainer', 'orchestrator', and 'api')
 # ==============================================================================
 FROM python:3.11-slim AS runtime
 
@@ -50,10 +54,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /app/artifacts /app/data /app/local_databases \
     && chown -R appuser:appuser /app
 
-# Copy pre-built virtual environment, application source, and baseline artifacts
+# Copy pre-built virtual environment and application source code
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 COPY --from=builder --chown=appuser:appuser /build/src ./src
-COPY --from=builder --chown=appuser:appuser /build/artifacts ./artifacts
 
 # Run container as unprivileged non-root user
 USER appuser

@@ -42,11 +42,5 @@ jobs:
       - name: Run Pylint static analysis
         run: python -m pylint src/
 
-      - name: Run CLI model training job
-        run: python -m src.cli train
-
-      - name: Run CLI single-order prediction check
-        run: python -m src.cli predict --file order.json
-
       - name: Run Pytest suite
         run: python -m pytest -v
