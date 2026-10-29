@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
-from typing import Protocol, runtime_checkable
-
-import psycopg
-from psycopg.rows import dict_row
+from typing import Any, Protocol, runtime_checkable
 
 Order = dict[str, object]
 
@@ -39,7 +36,10 @@ class OrderCounter(Protocol):
 
 class PostgresWriter:
     def __init__(self, dsn: str) -> None:
-        self.connection = psycopg.connect(dsn, row_factory=dict_row)
+        import psycopg  # type: ignore[import-not-found]
+        from psycopg.rows import dict_row  # type: ignore[import-not-found]
+
+        self.connection: Any = psycopg.connect(dsn, row_factory=dict_row)
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:

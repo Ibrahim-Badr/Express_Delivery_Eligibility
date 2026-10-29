@@ -29,6 +29,9 @@ testpaths = [
     "tests"
 ]
 
+[tool.pyrefly]
+search-path = [".", "src", "erp"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

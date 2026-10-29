@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from config import SimulationConfig
-from generator import OrderGenerator
-from simulator import ErpSimulator
-from storage import NoOpWriter, PostgresWriter
+from erp.config import SimulationConfig
+from erp.generator import OrderGenerator
+from erp.simulator import ErpSimulator
+from erp.storage import NoOpWriter, PostgresWriter
 
 
 def main() -> None:

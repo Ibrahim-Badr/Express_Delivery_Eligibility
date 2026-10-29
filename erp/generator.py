@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 import random
+from datetime import date, timedelta
 
 
 class OrderGenerator:

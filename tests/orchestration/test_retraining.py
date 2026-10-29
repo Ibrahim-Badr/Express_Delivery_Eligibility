@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.domain.entities import ModelEntity
 from src.infra.local.memory_order_store import MemoryOrderStore

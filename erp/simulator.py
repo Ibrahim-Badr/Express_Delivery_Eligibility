@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 import logging
 import time
+from datetime import date, timedelta
 
-from config import SimulationConfig
-from generator import OrderGenerator
-from storage import OrderCounter, OrderWriter
+from erp.config import SimulationConfig
+from erp.generator import OrderGenerator
+from erp.storage import OrderCounter, OrderWriter
 
 
 class ErpSimulator:
