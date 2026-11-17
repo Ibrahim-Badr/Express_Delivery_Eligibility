@@ -1,53 +1,119 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from datetime import date, datetime
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
+from src.core.constants import FEATURE_COLUMNS
+
+WEATHER_MAP = {
+    "clear": "normal",
+    "rain": "pluie",
+    "wind": "orage",
+    "snow": "neige",
+    "normal": "normal",
+    "pluie": "pluie",
+    "orage": "orage",
+    "neige": "neige",
+}
+
+ZONE_MAP = {
+    "centre": "centre",
+    "suburb": "banlieue",
+    "rural": "rurale",
+    "proche_banlieue": "proche_banlieue",
+    "banlieue": "banlieue",
+    "rurale": "rurale",
+}
+
+CUSTOMER_TYPE_MAP = {
+    "individual": "standard",
+    "business": "premium",
+    "standard": "standard",
+    "premium": "premium",
+}
+
+
+def parse_order_date(value: Any) -> date | None:
+    """Parse a date, datetime, or ISO date string into a date object, or None."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.split("T")[0]).date()
+        except ValueError:
+            return None
+    return None
 
 
 def harmonize_categories(df: pd.DataFrame) -> pd.DataFrame:
     """Harmonize categorical features across legacy French and modern English ERP schemas."""
     data = df.copy()
 
-    weather_map = {
-        "clear": "normal",
-        "rain": "pluie",
-        "wind": "orage",
-        "snow": "neige",
-        "normal": "normal",
-        "pluie": "pluie",
-        "orage": "orage",
-        "neige": "neige",
-    }
     if "weather" in data.columns:
         data["weather"] = data["weather"].astype(str).str.lower().map(
-            lambda w: weather_map.get(w, "normal")
+            lambda w: WEATHER_MAP.get(w, "normal")
         )
 
-    zone_map = {
-        "centre": "centre",
-        "suburb": "banlieue",
-        "rural": "rurale",
-        "proche_banlieue": "proche_banlieue",
-        "banlieue": "banlieue",
-        "rurale": "rurale",
-    }
     if "delivery_zone" in data.columns:
         data["delivery_zone"] = data["delivery_zone"].astype(str).str.lower().map(
-            lambda z: zone_map.get(z, "centre")
+            lambda z: ZONE_MAP.get(z, "centre")
         )
 
-    customer_map = {
-        "individual": "standard",
-        "business": "premium",
-        "standard": "standard",
-        "premium": "premium",
-    }
     if "customer_type" in data.columns:
         data["customer_type"] = data["customer_type"].astype(str).str.lower().map(
-            lambda c: customer_map.get(c, "standard")
+            lambda c: CUSTOMER_TYPE_MAP.get(c, "standard")
         )
 
     return data
+
+
+def normalize_order_payload(raw_order: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize a single raw ERP or stored order dict into the API/ML feature contract.
+
+    - Imputes missing pre-2015 `weekend` from `day_of_week`.
+    - Imputes missing pre-2017 `preparation_time_min` with 20.0.
+    - Scales ERP `carrier_capacity` from [5, 50] down to [0.0, 1.0].
+    - Harmonizes English ERP categories (`rain`, `suburb`, `business`) to French contract.
+    - Projects strictly to `FEATURE_COLUMNS` (+ `order_id`) so `extra="forbid"` schemas succeed.
+    """
+    day_of_week = int(raw_order["day_of_week"])
+    weekend_raw = raw_order.get("weekend")
+    weekend = int(weekend_raw) if weekend_raw is not None else int(day_of_week >= 5)
+
+    prep_raw = raw_order.get("preparation_time_min")
+    prep_time = float(prep_raw) if prep_raw is not None else 20.0
+
+    carrier_capacity = float(raw_order["carrier_capacity"])
+    if carrier_capacity > 1.0:
+        carrier_capacity = round(min(max(carrier_capacity / 50.0, 0.0), 1.0), 4)
+
+    normalized: dict[str, Any] = {
+        "hour": int(raw_order["hour"]),
+        "day_of_week": day_of_week,
+        "weekend": weekend,
+        "distance_km": float(raw_order["distance_km"]),
+        "order_value_eur": float(raw_order["order_value_eur"]),
+        "weight_kg": float(raw_order["weight_kg"]),
+        "stock_available": int(raw_order["stock_available"]),
+        "preparation_time_min": prep_time,
+        "carrier_capacity": carrier_capacity,
+        "weather": WEATHER_MAP.get(str(raw_order.get("weather", "")).lower(), "normal"),
+        "delivery_zone": ZONE_MAP.get(str(raw_order.get("delivery_zone", "")).lower(), "centre"),
+        "customer_type": CUSTOMER_TYPE_MAP.get(
+            str(raw_order.get("customer_type", "")).lower(), "standard"
+        ),
+    }
+
+    projected = {col: normalized[col] for col in FEATURE_COLUMNS}
+    if raw_order.get("order_id") is not None:
+        projected["order_id"] = str(raw_order["order_id"])
+    return projected
 
 
 def compute_ground_truth_labels(

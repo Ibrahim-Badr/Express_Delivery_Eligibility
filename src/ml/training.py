@@ -21,6 +21,13 @@ from src.ml.pipeline import MLPipeline
 logger = logging.getLogger(__name__)
 
 
+def evaluate_pipeline_on_split(pipeline: Any, X_test: Any, y_test: Any) -> dict[str, float]:
+    """Score an already fitted pipeline on a held-out feature/label split."""
+    y_pred = pipeline.predict(X_test)
+    y_proba = pipeline.predict_proba(X_test)[:, 1]
+    return compute_classification_metrics(y_test, y_pred, y_proba)
+
+
 class TrainTestSplitter:
     """Validates order/label alignment and performs a stratified train/test split."""
 
@@ -58,6 +65,8 @@ class MLTrainer:
 
     def __init__(self, model_pipeline: Any = None):
         self.model_pipeline = model_pipeline or MLPipeline().get_model_pipeline()
+        self.last_X_test: Any = None
+        self.last_y_test: list[int] | None = None
 
     def train(
         self,
@@ -68,6 +77,8 @@ class MLTrainer:
         started_at = time.perf_counter()
         splitter = data_splitter or TrainTestSplitter()
         X_train, X_test, y_train, y_test = splitter.split(orders, labels)
+        self.last_X_test = X_test
+        self.last_y_test = list(y_test)
 
         self.model_pipeline.fit(X_train, y_train)
         y_pred = self.model_pipeline.predict(X_test)
@@ -76,10 +87,11 @@ class MLTrainer:
 
         run_id = self._log_to_mlflow(metrics)
         logger.info(
-            "ML training completed (run_id=%s, duration=%.2f s, roc_auc=%.4f)",
+            "ML training completed (run_id=%s, duration=%.2f s, roc_auc=%.4f, f1=%.4f)",
             run_id,
             time.perf_counter() - started_at,
             metrics["roc_auc"],
+            metrics["f1_score"],
         )
         return run_id, metrics, y_pred, y_proba
 
@@ -112,16 +124,13 @@ class MLTrainer:
             return None
 
 
-def train(
+def train_candidate(
     order_store: OrderRepository | None = None,
-    model_repo: ModelRepository | None = None,
-) -> ModelEntity:
-    """End-to-end training job using OrderRepository and ModelRepository abstractions."""
-    from src.core.dependencies import get_model_repository, get_order_repository
+) -> tuple[Any, ModelEntity, Any, list[int]]:
+    """Train a candidate pipeline and build its ModelEntity without saving artifacts yet."""
+    from src.core.dependencies import get_order_repository
 
     store = order_store or get_order_repository()
-    repo = model_repo or get_model_repository()
-
     orders, labels = store.get_training_data()
     trainer = MLTrainer()
     _, metrics, _, _ = trainer.train(orders, labels)
@@ -138,7 +147,19 @@ def train(
         trained_at=datetime.now(timezone.utc),
         limitations=["Trained on historical ERP & synthetic order data"],
     )
-    repo.save(trainer.model_pipeline, model_card)
+    return trainer.model_pipeline, model_card, trainer.last_X_test, trainer.last_y_test or []
+
+
+def train(
+    order_store: OrderRepository | None = None,
+    model_repo: ModelRepository | None = None,
+) -> ModelEntity:
+    """End-to-end training job that trains and persists artifacts via ModelRepository."""
+    from src.core.dependencies import get_model_repository
+
+    repo = model_repo or get_model_repository()
+    pipeline, model_card, _, _ = train_candidate(order_store=order_store)
+    repo.save(pipeline, model_card)
     logger.info("Training complete. Model and metadata saved via ModelRepository.")
     return model_card
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -12,7 +13,7 @@ from src.infra.abstractions.model_repository import ModelRepository
 
 
 class FileModelRepository(ModelRepository):
-    """Stores and loads ML model artifacts and metadata on the local filesystem."""
+    """Stores, loads, and hot-reloads ML model artifacts on the local filesystem."""
 
     def __init__(self, artifacts_dir: str | Path | None = None):
         self.artifacts_dir = Path(artifacts_dir or settings.artifacts_dir)
@@ -22,11 +23,11 @@ class FileModelRepository(ModelRepository):
         self.features_path = self.artifacts_dir / "features.json"
 
         self._pipeline: Any = None
+        self._pipeline_mtime: float | None = None
         self._model_card: Dict[str, Any] | None = None
+        self._card_mtime: float | None = None
 
     def is_available(self) -> bool:
-        if self._pipeline is not None and self._model_card is not None:
-            return True
         return self.model_joblib_path.exists() and self.model_card_path.exists()
 
     def save(self, pipeline: Any, model_card: ModelEntity | Dict[str, Any]) -> None:
@@ -47,19 +48,39 @@ class FileModelRepository(ModelRepository):
             encoding="utf-8",
         )
 
+        # Ensure group-writable permissions across shared Docker volumes (appuser + airflow)
+        for path in (
+            self.model_joblib_path,
+            self.model_card_path,
+            self.metrics_path,
+            self.features_path,
+        ):
+            try:
+                os.chmod(path, 0o664)
+            except OSError:
+                pass
+
         self._pipeline = pipeline
+        self._pipeline_mtime = self.model_joblib_path.stat().st_mtime
         self._model_card = card_dict
+        self._card_mtime = self.model_card_path.stat().st_mtime
 
     def load_pipeline(self) -> Any:
-        if self._pipeline is None:
-            if not self.model_joblib_path.exists():
-                raise FileNotFoundError("Model pipeline artifact not found.")
+        if not self.model_joblib_path.exists():
+            raise FileNotFoundError("Model pipeline artifact not found.")
+
+        current_mtime = self.model_joblib_path.stat().st_mtime
+        if self._pipeline is None or current_mtime != self._pipeline_mtime:
             self._pipeline = joblib.load(self.model_joblib_path)
+            self._pipeline_mtime = current_mtime
         return self._pipeline
 
     def load_model_card(self) -> Dict[str, Any]:
-        if self._model_card is None:
-            if not self.model_card_path.exists():
-                raise FileNotFoundError("Model card artifact not found.")
+        if not self.model_card_path.exists():
+            raise FileNotFoundError("Model card artifact not found.")
+
+        current_mtime = self.model_card_path.stat().st_mtime
+        if self._model_card is None or current_mtime != self._card_mtime:
             self._model_card = json.loads(self.model_card_path.read_text(encoding="utf-8"))
+            self._card_mtime = current_mtime
         return self._model_card

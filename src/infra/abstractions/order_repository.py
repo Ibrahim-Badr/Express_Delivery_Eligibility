@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from src.domain.entities import OrderEntity
@@ -27,6 +28,25 @@ class OrderRepository(ABC):
     @abstractmethod
     def get_all(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Retrieve all stored orders, optionally bounded by a limit."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_orders_since(
+        self,
+        since_order_id: Optional[str] = None,
+        since_date: Optional[date] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve orders incrementally ordered by date and ID for streaming/polling."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_orders_by_date(
+        self,
+        target_date: date,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve orders scheduled for a specific delivery date."""
         raise NotImplementedError
 
     @abstractmethod

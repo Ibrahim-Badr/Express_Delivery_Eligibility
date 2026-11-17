@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 from erp.config import SimulationConfig
 from erp.generator import OrderGenerator
 from erp.storage import OrderCounter, OrderWriter
+
+READY_MARKER = Path("/tmp/erp_seeded")
 
 
 class ErpSimulator:
@@ -25,10 +28,13 @@ class ErpSimulator:
         self.logger = logger
 
     def run(self) -> None:
+        READY_MARKER.unlink(missing_ok=True)
         try:
             self._write_history()
+            READY_MARKER.touch()
             self._write_live_stream()
         finally:
+            READY_MARKER.unlink(missing_ok=True)
             self.postgres.close()
             self.logger.info("Database connection closed.")
 

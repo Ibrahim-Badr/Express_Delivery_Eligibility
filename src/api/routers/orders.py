@@ -12,6 +12,7 @@ from src.core.dependencies import (
     get_prediction_store,
 )
 from src.core.errors import NotFoundError
+from src.etl.cleaning import normalize_order_payload
 from src.infra.abstractions.model_repository import ModelRepository
 from src.infra.abstractions.order_repository import OrderRepository
 from src.infra.abstractions.prediction_store import PredictionStore
@@ -31,8 +32,9 @@ def process_prediction_task(
     """Execute background prediction for an accepted order and persist the result."""
     try:
         pipeline = model_repo.load_pipeline()
+        normalized = normalize_order_payload(order_data)
         start_time = datetime.now()
-        pred_res = predict_single_order(pipeline, order_data)
+        pred_res = predict_single_order(pipeline, normalized)
         latency = (datetime.now() - start_time).total_seconds() * 1000
 
         prediction = Prediction(
@@ -76,4 +78,4 @@ async def get_order(
     order = order_store.get(order_id)
     if not order:
         raise NotFoundError(f"Order {order_id} not found")
-    return OrderFeatures(**order)
+    return OrderFeatures(**normalize_order_payload(order))

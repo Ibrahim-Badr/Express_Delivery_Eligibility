@@ -13,8 +13,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./local_databases/local.db"
     mlflow_tracking_uri: str = "sqlite:///./local_databases/mlflow.db"
     mlflow_experiment_name: str = "livraison-express"
-    retrain_interval_seconds: float = 30.0
-    retrain_min_new_orders: int = 50
+    retrain_interval_seconds: float = 60.0
+    retrain_min_new_orders: int = 300
+    retrain_growth_ratio: float = 0.05
+    retrain_min_roc_auc: float = 0.75
+    retrain_min_f1_score: float = 0.75
 
     model_config = SettingsConfigDict(
         env_file=".env",

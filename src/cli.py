@@ -3,6 +3,7 @@ from pathlib import Path
 
 import typer
 
+from src.core.config import settings
 from src.core.dependencies import get_model_repository
 from src.core.logging import setup_logging
 from src.domain.entities import OrderEntity
@@ -69,35 +70,64 @@ def predict_cmd(
     typer.echo(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
 
 
+@app.command("retrain-should-run")
+def retrain_should_run_cmd(
+    min_new_orders: int = settings.retrain_min_new_orders,
+    growth_ratio: float = settings.retrain_growth_ratio,
+):
+    """Exit 0 if hybrid retraining threshold is reached, else exit 2 (for Airflow branching)."""
+    from src.orchestration.retraining import RetrainingOrchestrator
+
+    orchestrator = RetrainingOrchestrator(
+        growth_ratio=growth_ratio,
+        state_path=RetrainingOrchestrator.default_state_path(),
+    )
+    if orchestrator.should_trigger_retrain(min_new_orders=min_new_orders):
+        typer.echo("TRIGGER_RETRAINING")
+        raise typer.Exit(code=0)
+    typer.echo("SKIP_RETRAINING")
+    raise typer.Exit(code=2)
+
+
+@app.command("retrain-check")
+def retrain_check_cmd(
+    min_new_orders: int = settings.retrain_min_new_orders,
+    growth_ratio: float = settings.retrain_growth_ratio,
+):
+    """One-shot check if sufficient new orders exist and retrain model."""
+    from src.orchestration.retraining import RetrainingOrchestrator
+
+    orchestrator = RetrainingOrchestrator(
+        growth_ratio=growth_ratio,
+        state_path=RetrainingOrchestrator.default_state_path(),
+    )
+    promoted = orchestrator.trigger_retrain_if_needed(min_new_orders=min_new_orders)
+    if promoted:
+        typer.echo("Retraining succeeded and candidate model was promoted.")
+    else:
+        typer.echo("No retraining needed or candidate did not beat active champion.")
+
+
 @app.command("retrain-daemon")
 def retrain_daemon_cmd(
-    interval_seconds: float = 30.0,
-    min_new_orders: int = 50,
+    interval_seconds: float = settings.retrain_interval_seconds,
+    min_new_orders: int = settings.retrain_min_new_orders,
+    growth_ratio: float = settings.retrain_growth_ratio,
 ):
     """Start continuous background model retraining orchestrator."""
     from src.orchestration.retraining import RetrainingOrchestrator
 
     typer.echo(
         f"Starting retraining orchestrator (interval={interval_seconds}s, "
-        f"threshold={min_new_orders})..."
+        f"min_new_orders={min_new_orders}, growth_ratio={growth_ratio:.2%})..."
     )
-    orchestrator = RetrainingOrchestrator()
+    orchestrator = RetrainingOrchestrator(
+        growth_ratio=growth_ratio,
+        state_path=RetrainingOrchestrator.default_state_path(),
+    )
     orchestrator.run_daemon_loop(
         interval_seconds=interval_seconds, min_new_orders=min_new_orders
     )
-
-
-@app.command("retrain-check")
-def retrain_check_cmd(min_new_orders: int = 50):
-    """One-shot check if sufficient new orders exist and retrain model."""
-    from src.orchestration.retraining import RetrainingOrchestrator
-
-    orchestrator = RetrainingOrchestrator()
-    promoted = orchestrator.trigger_retrain_if_needed(min_new_orders=min_new_orders)
-    if promoted:
-        typer.echo("Retraining succeeded and model was updated.")
-    else:
-        typer.echo("No retraining needed or criteria not met.")
 
 
 if __name__ == "__main__":

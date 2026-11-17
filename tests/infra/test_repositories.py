@@ -1,3 +1,5 @@
+import os
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict
 
@@ -130,3 +132,71 @@ def test_file_model_repository_save_and_load(tmp_path: Path):
 
     loaded_card = repo.load_model_card()
     assert loaded_card["metrics"]["roc_auc"] == 0.94
+
+
+def test_file_model_repository_hot_reloads_when_artifacts_change(tmp_path: Path):
+    reader_repo = FileModelRepository(artifacts_dir=tmp_path)
+    writer_repo = FileModelRepository(artifacts_dir=tmp_path)
+
+    initial_card = ModelEntity(
+        project="eligibilite-livraison-express",
+        model_version="1.0.0",
+        model_type="LogisticRegression",
+        task="binary classification",
+        target="express_eligible",
+        threshold=0.5,
+        features=["distance_km"],
+        metrics={"roc_auc": 0.85, "f1_score": 0.84},
+    )
+    writer_repo.save(FakePipeline(positive_proba=0.6), initial_card)
+
+    assert reader_repo.load_pipeline().positive_proba == 0.6
+    assert reader_repo.load_model_card()["metrics"]["roc_auc"] == 0.85
+
+    updated_card = ModelEntity(
+        project="eligibilite-livraison-express",
+        model_version="1.0.1",
+        model_type="LogisticRegression",
+        task="binary classification",
+        target="express_eligible",
+        threshold=0.5,
+        features=["distance_km"],
+        metrics={"roc_auc": 0.92, "f1_score": 0.90},
+    )
+    writer_repo.save(FakePipeline(positive_proba=0.9), updated_card)
+
+    # Ensure distinct mtime on fast filesystems so hot-reload detection triggers
+    for path in (writer_repo.model_joblib_path, writer_repo.model_card_path):
+        stat = path.stat()
+        os.utime(path, (stat.st_atime + 2, stat.st_mtime + 2))
+
+    assert reader_repo.load_pipeline().positive_proba == 0.9
+    assert reader_repo.load_model_card()["metrics"]["roc_auc"] == 0.92
+
+
+def test_order_repositories_incremental_and_daily_queries(sample_order_dict: Dict[str, Any]):
+    test_engine = create_engine("sqlite:///:memory:")
+    test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    pg_repo = PostgresOrderRepository(db_engine=test_engine, session_factory=test_session)
+    mem_repo = MemoryOrderStore()
+
+    records = [
+        ("ERP-00000001", "2025-10-01"),
+        ("ERP-00000002", "2025-10-02"),
+        ("ERP-00000003", "2025-10-02"),
+    ]
+    for repo in (pg_repo, mem_repo):
+        for oid, odate in records:
+            payload = dict(sample_order_dict)
+            payload["order_date"] = odate
+            repo.save(oid, payload)
+
+        daily = repo.get_orders_by_date(date(2025, 10, 2))
+        assert [row["order_id"] for row in daily] == ["ERP-00000002", "ERP-00000003"]
+
+        since = repo.get_orders_since(
+            since_order_id="ERP-00000001",
+            since_date=date(2025, 10, 2),
+            limit=1,
+        )
+        assert [row["order_id"] for row in since] == ["ERP-00000002"]
