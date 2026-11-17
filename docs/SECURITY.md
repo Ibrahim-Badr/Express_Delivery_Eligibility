@@ -31,10 +31,10 @@ We will acknowledge receipt within **48 hours** and provide a remediation timeli
 - Malformed requests are rejected with `HTTP 422 Unprocessable Entity` before reaching the Machine Learning pipeline or database layer.
 
 ### Secret & Credential Management
-- **Zero Secrets in Git**: `.env`, `.env.dev`, `.env.test`, and `.env.prod` are excluded via `.gitignore`. Only `.env.example` with non-sensitive placeholders is committed.
-- **Cloud Secret Storage**: Production database credentials (`DATABASE_URL`) and API secrets are stored in **Azure Key Vault** and injected at runtime.
+- **Zero Secrets in Git**: `.env` and environment-specific override files (`.env.*` except `.env.example`) are excluded via `.gitignore`. Only `.env.example` with non-sensitive placeholders is committed.
+- **Cloud Secret Storage**: Production database credentials (`DATABASE_URL`) and API secrets are stored securely in **Azure Key Vault** and injected at runtime.
 
 ### Container Security
 - The production Docker image uses a **multi-stage build** (`python:3.11-slim`) that strips compilers (`gcc`) and build-time headers from the final image.
-- The container runs as an unprivileged **non-root user** (`appuser`, UID `10001`) with `no-new-privileges:true` enforced in `docker-compose.yml`.
+- The container runs as an unprivileged **non-root user** (`appuser`, UID `10001`) with `no-new-privileges:true` enforced in `docker-compose.prod.yml`.
 - Every release image is automatically scanned for `CRITICAL` and `HIGH` OS and Python package CVEs using **Aqua Security Trivy** (`aquasecurity/trivy-action`) in the GitHub Actions release pipeline before being published to `ghcr.io`.

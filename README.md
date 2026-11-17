@@ -8,9 +8,29 @@ Production-ready Machine Learning application and REST API that predicts whether
 
 This project transforms an experimental Jupyter Notebook into a modular, maintainable application following **Clean Architecture** and **SOLID / DRY / YAGNI** principles:
 
-- **Separation of Training & Serving**: Model training is executed as an independent execution process (`python -m src.cli train` or `orchestrator` daemon), never during image build or via an HTTP endpoint. The FastAPI server loads the serialized model artifact and serves low-latency predictions.
+- **Separation of Training & Serving**: Model training is executed as an independent execution process (`python -m src.cli train` or the **Apache Airflow** retraining DAG), never during `docker build` or inside an HTTP request. The FastAPI server loads the serialized `.joblib` model and hot-reloads whenever promoted artifacts change.
 - **Dependency Inversion (Ports & Adapters)**: High-level application logic (`api/`, `ml/`, `orchestration/`) depends solely on abstract contracts (`OrderRepository`, `ModelRepository`, `PredictionStore`) defined in `src/infra/abstractions/`. Concrete adapters (`PostgresOrderRepository`, `MemoryOrderStore`, `FileModelRepository`, `MemoryPredictionStore`, `PostgresPredictionStore`) are wired in `src/core/dependencies.py`.
-- **Single Feature Contract**: `FEATURE_COLUMNS` in `src/core/constants.py` and `orders_to_dataframe()` in `src/etl/features.py` guarantee identical column ordering between training and inference.
+- **Single Feature Contract**: `FEATURE_COLUMNS` in `src/core/constants.py`, `normalize_order_payload()` in `src/etl/cleaning.py`, and `orders_to_dataframe()` in `src/etl/features.py` guarantee identical schema and column ordering between ERP ingestion, training, and inference.
+
+```mermaid
+flowchart LR
+    ERP["ERP Simulator\n(erp/, non-root erpuser)"] -->|"11k history + live stream\npublic.orders"| PG[("PostgreSQL 17\n(db container)")]
+
+    subgraph APP["Python Application & MLOps (src/ + airflow/)"]
+        REPO["PostgresOrderRepository\n& ETL Cleaning / Imputation"]
+        TRAIN["MLTrainer & Champion-Challenger\n(src/ml/ + src/orchestration/)"]
+        AF["Apache Airflow DAG :8080\n(check_new_orders -> retrain / skip)"]
+        API["FastAPI REST API :8000\n(Non-root appuser, /v1/*)"]
+        REPO --> TRAIN
+        AF -->|"Hybrid trigger\nmax(300, 5% growth)"| TRAIN
+    end
+
+    PG --> REPO
+    TRAIN -->|"Log metrics & runs"| MLF[("MLflow Tracking\nmlflow.db")]
+    TRAIN -->|"Promote winning model"| VOL[["Shared Volume /app/artifacts\n(.joblib + model_card.json)"]]
+    VOL -->|"st_mtime hot-reload (:ro)"| API
+    API -->|"Persist predictions"| PG
+```
 
 ---
 
@@ -20,8 +40,12 @@ This project transforms an experimental Jupyter Notebook into a modular, maintai
 Express_Delivery_Eligibility/
 ├── .github/
 │   └── workflows/                          # Automated CI/CD pipelines (GitHub Actions)
-│       ├── ci.yml                          # Linting (Ruff + Pylint) & automated tests (Pytest)
+│       ├── ci.yml                          # Linting (Ruff + Pylint), Pytest & Docker Compose integration test
 │       └── release-docker.yml              # Automated Docker build, compression & push to GHCR on release
+├── airflow/                                # Apache Airflow Orchestrator
+│   ├── Dockerfile                          # Airflow 2.10.5 image with isolated ML app virtualenv
+│   └── dags/
+│       └── retraining_dag.py               # Scheduled DAG (check_new_orders -> retrain_and_promote / skip)
 ├── artifacts/                              # Generated model artifacts (created by train job)
 │   ├── express_delivery_model.joblib       # Trained scikit-learn Pipeline (preprocessor + classifier)
 │   ├── model_card.json                     # Full model metadata and evaluation metrics
@@ -46,10 +70,12 @@ Express_Delivery_Eligibility/
 │   ├── SECURITY.md                         # Security policy, vulnerability reporting & hardening practices
 │   ├── CODE_OF_CONDUCT.md                  # Contributor Covenant Code of Conduct
 │   └── adr/                                # Architecture Decision Records (ADRs)
-│       ├── 0001-choix-plateforme-de-deploiement.md
-│       ├── 0002-strategie-de-deploiement.md
-│       ├── 0003-securite-entrees-sorties-et-donnees.md
-│       └── 0004-choix-base-de-donnees-source-commandes.md
+│       ├── 0001-stockage-des-commandes.md
+│       ├── 0002-stockage-des-artefacts-de-modele.md
+│       ├── 0003-plateforme-de-deploiement.md
+│       ├── 0004-cloud-on-premise-ou-local.md
+│       ├── 0005-strategie-de-deploiement.md
+│       └── 0006-choix-base-de-donnees-source-commandes.md
 ├── notebooks/
 │   └── project_test_v1_final_final2.ipynb  # Original experimental notebook
 ├── src/
@@ -208,9 +234,9 @@ The production environment operates 24/7 with the full ERP live stream, model in
 # Build and launch production stack in detached mode
 docker compose -f docker-compose.prod.yml up -d --build
 
-# View logs from all services (or specifically erp-simulator / orchestrator)
+# View logs from all services (or specifically erp-simulator / airflow)
 docker compose -f docker-compose.prod.yml logs -f erp-simulator
-docker compose -f docker-compose.prod.yml logs -f orchestrator
+docker compose -f docker-compose.prod.yml logs -f airflow
 
 # Stop production stack
 docker compose -f docker-compose.prod.yml down
@@ -219,9 +245,9 @@ docker compose -f docker-compose.prod.yml down
 Services orchestrated:
 1. **`db` (`postgres:17-alpine`)**: Stateful production ERP database on port `5432` with persistent volume `prod_postgres_data`.
 2. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds.
-3. **`trainer`**: Initial training batch job that prepares model artifacts before API launch.
-4. **`api` (`FastAPI`)**: Stateless prediction API running as non-root `appuser` on port `8000`.
-5. **`orchestrator`**: Continuous background daemon monitoring PostgreSQL order growth, triggering automated retraining when 50+ new orders arrive, and validating model performance (ROC-AUC $\ge 0.70$) before promoting artifacts.
+3. **`trainer`**: Initial training batch job waiting for PostgreSQL historical seeding before building initial model artifacts.
+4. **`api` (`FastAPI`)**: Stateless prediction API running as non-root `appuser` on port `8000` (with `st_mtime` artifact hot-reload).
+5. **`airflow` (`Apache Airflow 2.10.5`)**: Scheduled DAG (`express_delivery_retraining`) monitoring PostgreSQL order growth via the dynamic hybrid trigger (`max(300, 5% * last_trained_count)`), running same-split Champion vs. Challenger validation before promoting artifacts. Web UI available at [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin`).
 
 ---
 
@@ -336,9 +362,33 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000) to view experiment metrics a
 
 ---
 
-## 7. Architecture Decision Records (ADRs)
+## 7. CI/CD Pipeline (GitFlow to GHCR)
 
-- [ADR 0001 - Deployment Platform Choice (Azure Hybrid IaaS/PaaS)](docs/adr/0001-choix-plateforme-de-deploiement.md)
-- [ADR 0002 - Deployment Strategy & Environments (Terraform + GitHub Actions)](docs/adr/0002-strategie-de-deploiement.md)
-- [ADR 0003 - I/O Validation & Data Access Security (Pydantic + Azure Key Vault)](docs/adr/0003-securite-entrees-sorties-et-donnees.md)
-- [ADR 0004 - Data Source Database Selection (PostgreSQL vs. MongoDB)](docs/adr/0004-choix-base-de-donnees-source-commandes.md)
+Following MLOps separation of concerns, **CI/CD builds, lints, tests, scans, and publishes the stateless application container**, while model training executes solely at runtime against PostgreSQL.
+
+```mermaid
+flowchart LR
+    DEV["feature/* -> develop\n& Pull Requests"] --> CI_Q["CI Job 1: quality-and-tests\n(Ruff + Pylint >= 8.0 + Pytest)"]
+    CI_Q --> CI_D["CI Job 2: docker-integration\n(docker-compose.test.yml + Airflow build)"]
+    CI_D --> REL["release/vX.Y.Z -> main\n& GitHub Release / Tag v*.*.*"]
+    REL --> CD_B["CD: Multi-Stage Docker Build\n(python:3.11-slim, non-root appuser)"]
+    CD_B --> TRIVY["CD: Trivy CVE Scan\n(CRITICAL / HIGH OS & Python libs)"]
+    TRIVY --> GHCR["CD: Push Tagged Image\nghcr.io/OWNER/REPO"]
+```
+
+- **Continuous Integration ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))**:
+  1. `quality-and-tests`: Enforces formatting/imports (`python -m ruff check .`), static quality score >= 8.0 (`python -m pylint src/`), and automated unit/ETL/ML/API/orchestrator tests (`python -m pytest -v`).
+  2. `docker-integration`: Validates both `docker-compose.test.yml` and `docker-compose.prod.yml`, boots the isolated test stack (`Postgres` $\rightarrow$ `ERP` $\rightarrow$ `Trainer` $\rightarrow$ `Pytest`), and verifies the `airflow` image builds cleanly.
+- **Continuous Delivery ([`.github/workflows/release-docker.yml`](.github/workflows/release-docker.yml))**:
+  - Triggered on published GitHub releases or semantic version tags (`v*.*.*`), authenticates with `GITHUB_TOKEN`, scans the built image with **Aqua Security Trivy**, and pushes versioned tags (`semver`, `sha-*`, `latest`) to **GitHub Container Registry (`ghcr.io`)**.
+
+---
+
+## 8. Architecture Decision Records (ADRs)
+
+- [ADR 0001 - Order Storage (OrderRepository & Adapters)](docs/adr/0001-stockage-des-commandes.md)
+- [ADR 0002 - Model Artifact Storage (FileModelRepository & MLflow)](docs/adr/0002-stockage-des-artefacts-de-modele.md)
+- [ADR 0003 - Deployment Platform Choice (Docker & Azure IaaS/PaaS)](docs/adr/0003-plateforme-de-deploiement.md)
+- [ADR 0004 - Cloud, On-Premise, or Local Environment?](docs/adr/0004-cloud-on-premise-ou-local.md)
+- [ADR 0005 - Deployment Strategy & Environments (GitFlow, IaC & CI/CD)](docs/adr/0005-strategie-de-deploiement.md)
+- [ADR 0006 - Database Choice (PostgreSQL vs. MongoDB vs. Other)](docs/adr/0006-choix-base-de-donnees-source-commandes.md)
