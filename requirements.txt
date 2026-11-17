@@ -22,4 +22,4 @@ pylint
 
 # Database & Infrastructure
 sqlalchemy
-psycopg2-binary
+psycopg[binary]

@@ -9,5 +9,5 @@ numpy
 scikit-learn
 joblib
 sqlalchemy
-psycopg2-binary
+psycopg[binary]
 mlflow

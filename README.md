@@ -212,8 +212,8 @@ Following the project requirements, two dedicated Docker Compose environments ar
 The test environment runs against a lightweight, bounded test database (`port 5433:5432`) to validate ERP data ingestion, model training, and automated test execution inside containers:
 
 ```bash
-# Start the test environment (Postgres, bounded ERP simulator, Trainer, and automated Test Runner)
-docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+# Start the test environment (Postgres -> bounded ERP simulator -> Trainer -> Pytest)
+docker compose -f docker-compose.test.yml run --rm --build test-runner
 
 # Teardown and reset test volumes
 docker compose -f docker-compose.test.yml down -v

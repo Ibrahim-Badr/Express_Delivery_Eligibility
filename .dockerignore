@@ -32,8 +32,9 @@ data/*.csv
 .env.*
 !.env.example
 
-# Documentation, Notebooks, Simulator, Airflow & Tests (not needed in main API/trainer image)
-airflow
+# Documentation, Notebooks, Simulator, Airflow logs & Tests
+airflow/logs
+airflow/*.db
 docs
 erp
 notebooks
