@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: livraison
       POSTGRES_PASSWORD: livraison
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     security_opt:
@@ -41,6 +41,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/erp_seeded"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -62,6 +67,8 @@ services:
       - prod_model_artifacts:/app/artifacts
     depends_on:
       db:
+        condition: service_healthy
+      erp-simulator:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
@@ -99,25 +106,47 @@ services:
     restart: unless-stopped
 
   # ----------------------------------------------------------------------------
-  # 5. Model Retraining Orchestrator (Monitors new orders and retrains model)
+  # 5. Apache Airflow Orchestrator (DAG scheduler + Web UI on port 8080)
   # ----------------------------------------------------------------------------
-  orchestrator:
+  airflow:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: express_delivery_orchestrator_prod
-    command: ["python", "-m", "src.cli", "retrain-daemon", "--interval-seconds", "60", "--min-new-orders", "50"]
+      dockerfile: airflow/Dockerfile
+    container_name: express_delivery_airflow_prod
+    command: ["standalone"]
+    group_add:
+      - "10001"
+    ports:
+      - "127.0.0.1:8080:8080"
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql://livraison:livraison@db:5432/livraison_express
       - ARTIFACTS_DIR=/app/artifacts
+      - MLFLOW_TRACKING_URI=sqlite:////app/local_databases/mlflow.db
+      - RETRAIN_MIN_NEW_ORDERS=300
+      - RETRAIN_GROWTH_RATIO=0.05
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/data/airflow.db
+      - AIRFLOW__WEBSERVER__SECRET_KEY=express-delivery-airflow-secret
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
     volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./src:/opt/airflow/src:ro
       - prod_model_artifacts:/app/artifacts
+      - prod_airflow_data:/opt/airflow/data
     depends_on:
       api:
         condition: service_healthy
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -125,3 +154,4 @@ services:
 volumes:
   prod_postgres_data:
   prod_model_artifacts:
+  prod_airflow_data:

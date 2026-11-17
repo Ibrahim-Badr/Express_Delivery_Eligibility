@@ -49,14 +49,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 appuser \
-    && useradd --uid 10001 --gid appuser --shell /usr/sbin/nologin --no-create-home appuser \
+    && groupadd --gid 10001 appgroup \
+    && useradd --uid 10001 --gid appgroup --shell /usr/sbin/nologin --no-create-home appuser \
     && mkdir -p /app/artifacts /app/data /app/local_databases \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appgroup /app \
+    && chmod -R 775 /app/artifacts /app/data /app/local_databases
 
 # Copy pre-built virtual environment and application source code
-COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
-COPY --from=builder --chown=appuser:appuser /build/src ./src
+COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
+COPY --from=builder --chown=appuser:appgroup /build/src ./src
 
 # Run container as unprivileged non-root user
 USER appuser

@@ -16,20 +16,26 @@ __pycache__
 .coverage
 htmlcov
 
-# Local databases & MLflow runs
+# Local databases, artifacts & MLflow runs
 *.db
 *.sqlite3
 local_databases
 mlruns
 mlartifacts
+artifacts/*.joblib
+artifacts/*.pkl
+artifacts/*.json
+data/*.csv
 
 # Environment files
 .env
 .env.*
 !.env.example
 
-# Documentation, Notebooks & Tests (not needed in production container)
+# Documentation, Notebooks, Simulator, Airflow & Tests (not needed in main API/trainer image)
+airflow
 docs
+erp
 notebooks
 tests
 README.md

@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: livraison
       POSTGRES_PASSWORD: livraison
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - test_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -59,6 +59,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      erp-simulator:
+        condition: service_completed_successfully
     restart: "no"
 
   # ----------------------------------------------------------------------------

@@ -9,8 +9,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && groupadd --gid 10002 erpgroup \
+    && useradd --uid 10002 --gid erpgroup --shell /usr/sbin/nologin --no-create-home erpuser
 
-COPY *.py ./erp/
+COPY --chown=erpuser:erpgroup *.py ./erp/
+
+USER erpuser
 
 CMD ["python", "-m", "erp.erp_simulator"]
