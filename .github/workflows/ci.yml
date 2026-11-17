@@ -1,4 +1,4 @@
-name: CI - Lint & Test
+name: CI - Lint, Unit Tests & Docker Stack
 
 on:
   push:
@@ -44,3 +44,29 @@ jobs:
 
       - name: Run Pytest suite
         run: python -m pytest -v
+
+  docker-integration:
+    name: Docker Compose End-to-End Test Stack
+    needs: quality-and-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configurations
+        run: |
+          docker compose -f docker-compose.test.yml config -q
+          docker compose -f docker-compose.prod.yml config -q
+
+      - name: Run containerized test stack (Postgres + ERP + Trainer + Pytest)
+        run: >
+          docker compose -f docker-compose.test.yml up
+          --build --abort-on-container-exit --exit-code-from test-runner
+
+      - name: Build production Airflow orchestrator image
+        run: docker compose -f docker-compose.prod.yml build airflow
+
+      - name: Teardown test containers and volumes
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
