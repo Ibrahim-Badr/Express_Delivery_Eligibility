@@ -80,6 +80,7 @@ services:
       - ARTIFACTS_DIR=/app/artifacts
     volumes:
       - test_model_artifacts:/app/artifacts:ro
+      - ./erp:/app/erp:ro
       - ./tests:/app/tests:ro
       - ./pyproject.toml:/app/pyproject.toml:ro
     depends_on:
