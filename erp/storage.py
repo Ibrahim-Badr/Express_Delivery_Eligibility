@@ -1,12 +1,21 @@
-"""PostgreSQL persistence adapter for the ERP simulator."""
+"""PostgreSQL and RabbitMQ persistence adapters for the ERP simulator."""
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Protocol, runtime_checkable
 
 Order = dict[str, object]
+logger = logging.getLogger("erp_simulator.storage")
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return str(value)
 
 
 class NoOpWriter:
@@ -108,3 +117,42 @@ class PostgresWriter:
 
     def close(self) -> None:
         self.connection.close()
+
+
+class RabbitMQWriter:
+    """Publishes live ERP order events to a RabbitMQ queue using pika."""
+
+    def __init__(self, url: str, queue_name: str = "live_orders") -> None:
+        self.url = url
+        self.queue_name = queue_name
+
+    def write(self, orders: Sequence[Order]) -> int:
+        if not orders:
+            return 0
+        import pika  # type: ignore[import-not-found]
+
+        connection: Any = None
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(self.url))
+            channel = connection.channel()
+            channel.queue_declare(queue=self.queue_name, durable=True)
+            published = 0
+            for order in orders:
+                body = json.dumps(order, default=_json_default).encode("utf-8")
+                channel.basic_publish(
+                    exchange="",
+                    routing_key=self.queue_name,
+                    body=body,
+                    properties=pika.BasicProperties(delivery_mode=2),
+                )
+                published += 1
+            return published
+        except Exception as exc:
+            logger.warning("RabbitMQ publish skipped: %s", exc)
+            return 0
+        finally:
+            if connection is not None and connection.is_open:
+                connection.close()
+
+    def close(self) -> None:
+        pass

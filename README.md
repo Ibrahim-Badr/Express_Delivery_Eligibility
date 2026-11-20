@@ -15,21 +15,24 @@ This project transforms an experimental Jupyter Notebook into a modular, maintai
 ```mermaid
 flowchart LR
     ERP["ERP Simulator\n(erp/, non-root erpuser)"] -->|"11k history + live stream\npublic.orders"| PG[("PostgreSQL 17\n(db container)")]
+    ERP -->|"Publish live batch\n(pika -> live_orders)"| RMQ[["RabbitMQ Broker\n(:5672 / UI :15672)"]]
 
     subgraph APP["Python Application & MLOps (src/ + airflow/)"]
         REPO["PostgresOrderRepository\n& ETL Cleaning / Imputation"]
         TRAIN["MLTrainer & Champion-Challenger\n(src/ml/ + src/orchestration/)"]
         AF["Apache Airflow DAG :8080\n(check_new_orders -> retrain / skip)"]
-        API["FastAPI REST API :8000\n(Non-root appuser, /v1/*)"]
+        API["FastAPI REST API & SSE :8000\n(Non-root appuser, /v1/* & /dashboard)"]
         REPO --> TRAIN
         AF -->|"Hybrid trigger\nmax(300, 5% growth)"| TRAIN
     end
 
     PG --> REPO
+    RMQ -->|"Consume queue (pika)"| API
     TRAIN -->|"Log metrics & runs"| MLF[("MLflow Tracking\nmlflow.db")]
     TRAIN -->|"Promote winning model"| VOL[["Shared Volume /app/artifacts\n(.joblib + model_card.json)"]]
     VOL -->|"st_mtime hot-reload (:ro)"| API
     API -->|"Persist predictions"| PG
+    API -->|"SSE real-time Express alerts"| UI["Logistics Operator UI\n(GET /dashboard)"]
 ```
 
 ---
@@ -201,6 +204,10 @@ Once the server is running (`python -m src.cli serve`), interactive documentatio
 | `POST` | `/v1/orders` | Submit an order for asynchronous processing | `202`, `422` |
 | `GET` | `/v1/orders/{order_id}` | Retrieve stored order features | `200`, `404` |
 | `GET` | `/v1/model` | Retrieve active model card metadata and metrics | `200`, `503` |
+| `GET` | `/dashboard` | Interactive Logistics Operator real-time delivery preparation GUI | `200` |
+| `GET` | `/v1/stream/deliveries` | Server-Sent Events (SSE) stream consuming live orders via RabbitMQ (`pika`) | `200`, `503` |
+| `GET` | `/v1/stream/deliveries/recent` | Fetch recent scored live deliveries and daily KPI summary | `200`, `503` |
+| `POST` | `/v1/stream/simulate` | Publish a live order event into RabbitMQ and score it immediately | `200`, `503` |
 
 ---
 
@@ -243,11 +250,12 @@ docker compose -f docker-compose.prod.yml down
 ```
 
 Services orchestrated:
-1. **`db` (`postgres:17-alpine`)**: Stateful production ERP database on port `5432` with persistent volume `prod_postgres_data`.
-2. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds.
-3. **`trainer`**: Initial training batch job waiting for PostgreSQL historical seeding before building initial model artifacts.
-4. **`api` (`FastAPI`)**: Stateless prediction API running as non-root `appuser` on port `8000` (with `st_mtime` artifact hot-reload).
-5. **`airflow` (`Apache Airflow 2.10.5`)**: Scheduled DAG (`express_delivery_retraining`) monitoring PostgreSQL order growth via the dynamic hybrid trigger (`max(300, 5% * last_trained_count)`), running same-split Champion vs. Challenger validation before promoting artifacts. Web UI available at [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin`).
+1. **`db` (`postgres:17-alpine`)**: Stateful production ERP database isolated on the Docker internal network with persistent volume `prod_postgres_data`.
+2. **`rabbitmq` (`rabbitmq:3.13-management-alpine`)**: AMQP streaming broker (`live_orders` durable queue) with Management UI on [http://127.0.0.1:15672](http://127.0.0.1:15672).
+3. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds to PostgreSQL and RabbitMQ (`pika`).
+4. **`trainer`**: Initial training batch job waiting for PostgreSQL historical seeding before building initial model artifacts.
+5. **`api` (`FastAPI`)**: Stateless prediction API, SSE consumer (`pika`), and Logistics Operator Dashboard ([http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard)) running as non-root `appuser` on port `8000`.
+6. **`airflow` (`Apache Airflow 2.10.5`)**: Scheduled DAG (`express_delivery_retraining`) monitoring PostgreSQL order growth via the dynamic hybrid trigger (`max(300, 5% * last_trained_count)`), running same-split Champion vs. Challenger validation before promoting artifacts. Web UI available at [http://127.0.0.1:8080](http://127.0.0.1:8080).
 
 ---
 

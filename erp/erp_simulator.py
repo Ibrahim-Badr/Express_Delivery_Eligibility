@@ -7,7 +7,7 @@ import logging
 from erp.config import SimulationConfig
 from erp.generator import OrderGenerator
 from erp.simulator import ErpSimulator
-from erp.storage import NoOpWriter, PostgresWriter
+from erp.storage import NoOpWriter, PostgresWriter, RabbitMQWriter
 
 
 def main() -> None:
@@ -26,11 +26,17 @@ def main() -> None:
         "unlimited" if config.live_order_limit == 0 else config.live_order_limit,
     )
     pg_writer = PostgresWriter(config.postgres_dsn) if config.postgres_dsn else NoOpWriter()
+    rmq_writer = (
+        RabbitMQWriter(config.rabbitmq_url, config.rabbitmq_queue)
+        if config.rabbitmq_url
+        else NoOpWriter()
+    )
     simulator = ErpSimulator(
         config,
         OrderGenerator(),
         pg_writer,
         logger,
+        broker=rmq_writer,
     )
     simulator.run()
 

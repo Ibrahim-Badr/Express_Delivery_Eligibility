@@ -9,7 +9,7 @@ from src.api.error_handlers import (
     not_found_handler,
     validation_exception_handler,
 )
-from src.api.routers import health, model, orders, predictions
+from src.api.routers import health, model, orders, predictions, streaming
 from src.api.schemas import OrderFeatures, Prediction
 from src.core.config import settings
 from src.core.dependencies import get_model_repository, get_prediction_store
@@ -38,6 +38,7 @@ app.include_router(health.router)
 app.include_router(orders.router)
 app.include_router(predictions.router)
 app.include_router(model.router)
+app.include_router(streaming.router)
 
 
 @app.get("/", include_in_schema=False)

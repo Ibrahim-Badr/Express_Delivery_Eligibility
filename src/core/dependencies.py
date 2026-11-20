@@ -1,4 +1,5 @@
 from src.core.config import settings
+from src.infra.abstractions.message_broker import OrderMessageBroker
 from src.infra.abstractions.model_repository import ModelRepository
 from src.infra.abstractions.order_repository import OrderRepository
 from src.infra.abstractions.prediction_store import PredictionStore
@@ -19,6 +20,18 @@ else:
     _order_repository = MemoryOrderStore()
     _prediction_store = MemoryPredictionStore()
 
+if settings.rabbitmq_url.startswith("amqp"):
+    from src.infra.messaging.rabbitmq_broker import RabbitMQOrderBroker
+
+    _message_broker: OrderMessageBroker = RabbitMQOrderBroker(
+        url=settings.rabbitmq_url,
+        queue_name=settings.rabbitmq_queue,
+    )
+else:
+    from src.infra.local.memory_broker import MemoryOrderBroker
+
+    _message_broker = MemoryOrderBroker()
+
 
 def get_order_repository() -> OrderRepository:
     return _order_repository
@@ -34,3 +47,7 @@ def get_model_repository() -> ModelRepository:
 
 def get_prediction_store() -> PredictionStore:
     return _prediction_store
+
+
+def get_message_broker() -> OrderMessageBroker:
+    return _message_broker

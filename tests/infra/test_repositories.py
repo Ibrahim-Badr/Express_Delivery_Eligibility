@@ -1,16 +1,22 @@
+import json
 import os
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import MagicMock, patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from erp.storage import RabbitMQWriter
 from src.domain.entities import ModelEntity
 from src.infra.database.postgres_order_repository import PostgresOrderRepository
 from src.infra.local.file_model_repository import FileModelRepository
+from src.infra.local.memory_broker import MemoryOrderBroker
 from src.infra.local.memory_order_store import InMemoryOrderRepository, MemoryOrderStore
 from src.infra.local.memory_prediction_store import MemoryPredictionStore
+from src.infra.messaging.rabbitmq_broker import RabbitMQOrderBroker
 from tests.conftest import FakePipeline
 
 
@@ -200,3 +206,45 @@ def test_order_repositories_incremental_and_daily_queries(sample_order_dict: Dic
             limit=1,
         )
         assert [row["order_id"] for row in since] == ["ERP-00000002"]
+
+
+def test_memory_order_broker_roundtrip(sample_order_dict: Dict[str, Any]):
+    broker = MemoryOrderBroker()
+    broker.publish_order({"order_id": "LIVE-1", **sample_order_dict})
+    broker.publish_order({"order_id": "LIVE-2", **sample_order_dict})
+
+    first_batch = broker.consume_orders(max_messages=1)
+    assert [msg["order_id"] for msg in first_batch] == ["LIVE-1"]
+
+    second_batch = broker.consume_orders(max_messages=5)
+    assert [msg["order_id"] for msg in second_batch] == ["LIVE-2"]
+    assert broker.consume_orders() == []
+
+
+def test_rabbitmq_pika_adapters_with_mocked_connection(sample_order_dict: Dict[str, Any]):
+    payload = {"order_id": "ERP-999", **sample_order_dict}
+    body_bytes = json.dumps(payload).encode("utf-8")
+
+    fake_channel = MagicMock()
+    fake_channel.basic_get.side_effect = [
+        (MagicMock(), MagicMock(), body_bytes),
+        (None, None, None),
+    ]
+    fake_conn = MagicMock()
+    fake_conn.is_open = True
+    fake_conn.channel.return_value = fake_channel
+
+    fake_pika = MagicMock()
+    fake_pika.BlockingConnection.return_value = fake_conn
+
+    with patch.dict(sys.modules, {"pika": fake_pika}):
+        writer = RabbitMQWriter("amqp://guest:guest@localhost:5672/%2F", "live_orders")
+        assert writer.write([payload]) == 1
+
+        broker = RabbitMQOrderBroker("amqp://guest:guest@localhost:5672/%2F", "live_orders")
+        broker.publish_order(payload)
+        assert fake_channel.basic_publish.call_count == 2
+
+        consumed = broker.consume_orders(max_messages=5)
+        assert len(consumed) == 1
+        assert consumed[0]["order_id"] == "ERP-999"

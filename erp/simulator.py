@@ -9,7 +9,7 @@ from pathlib import Path
 
 from erp.config import SimulationConfig
 from erp.generator import OrderGenerator
-from erp.storage import OrderCounter, OrderWriter
+from erp.storage import NoOpWriter, OrderCounter, OrderWriter
 
 READY_MARKER = Path("/tmp/erp_seeded")
 
@@ -21,11 +21,13 @@ class ErpSimulator:
         generator: OrderGenerator,
         postgres: OrderWriter,
         logger: logging.Logger,
+        broker: OrderWriter | None = None,
     ) -> None:
         self.config = config
         self.generator = generator
         self.postgres = postgres
         self.logger = logger
+        self.broker = broker or NoOpWriter()
 
     def run(self) -> None:
         READY_MARKER.unlink(missing_ok=True)
@@ -36,7 +38,8 @@ class ErpSimulator:
         finally:
             READY_MARKER.unlink(missing_ok=True)
             self.postgres.close()
-            self.logger.info("Database connection closed.")
+            self.broker.close()
+            self.logger.info("Database and broker connections closed.")
 
     def _write_history(self) -> None:
         old_count = self.config.postgres_old_history_orders
@@ -74,9 +77,11 @@ class ErpSimulator:
             size = self._next_batch_size(sequence)
             orders = self.generator.live_batch(sequence, size, simulation_date)
             postgres_count = self.postgres.write(orders)
+            broker_count = self.broker.write(orders)
             self.logger.info(
-                "Live batch written: PostgreSQL=%d, date=%s, last_order=%s.",
+                "Live batch written: PostgreSQL=%d, RabbitMQ=%d, date=%s, last_order=%s.",
                 postgres_count,
+                broker_count,
                 orders[-1]["order_date"],
                 orders[-1]["order_id"],
             )

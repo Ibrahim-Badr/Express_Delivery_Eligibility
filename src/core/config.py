@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     random_seed: int = 42
     log_level: str = "INFO"
     database_url: str = "sqlite:///./local_databases/local.db"
+    rabbitmq_url: str = ""
+    rabbitmq_queue: str = "live_orders"
     mlflow_tracking_uri: str = "sqlite:///./local_databases/mlflow.db"
     mlflow_experiment_name: str = "livraison-express"
     retrain_interval_seconds: float = 60.0

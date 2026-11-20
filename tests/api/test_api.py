@@ -2,11 +2,14 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
+from src.api.routers import streaming
 from src.core.dependencies import (
+    get_message_broker,
     get_model_repository,
     get_order_repository,
     get_prediction_store,
 )
+from src.infra.local.memory_broker import MemoryOrderBroker
 from src.infra.local.memory_order_store import MemoryOrderStore
 from src.infra.local.memory_prediction_store import MemoryPredictionStore
 from src.main import app
@@ -14,12 +17,15 @@ from tests.conftest import FakeModelRepository
 
 
 def _create_client(model_available: bool = True) -> TestClient:
+    streaming._RECENT_DELIVERIES.clear()
     model_repo = FakeModelRepository(available=model_available)
     order_store = MemoryOrderStore()
     pred_store = MemoryPredictionStore()
+    broker = MemoryOrderBroker()
     app.dependency_overrides[get_model_repository] = lambda: model_repo
     app.dependency_overrides[get_order_repository] = lambda: order_store
     app.dependency_overrides[get_prediction_store] = lambda: pred_store
+    app.dependency_overrides[get_message_broker] = lambda: broker
     return TestClient(app)
 
 
@@ -100,4 +106,31 @@ def test_invalid_payload_returns_422(sample_order_dict: Dict[str, Any]):
 
     res = client.post("/v1/predictions", json=bad_payload)
     assert res.status_code == 422
+    app.dependency_overrides.clear()
+
+
+def test_streaming_dashboard_and_broker_endpoints(sample_order_dict: Dict[str, Any]):
+    client = _create_client(model_available=True)
+
+    dash = client.get("/dashboard")
+    assert dash.status_code == 200
+    assert "Logistics Operator Dashboard" in dash.text
+
+    sim = client.post("/v1/stream/simulate", json=sample_order_dict)
+    assert sim.status_code == 200
+    sim_data = sim.json()
+    assert sim_data["decision"] == "oui"
+
+    recent = client.get("/v1/stream/deliveries/recent")
+    assert recent.status_code == 200
+    body = recent.json()
+    assert body["summary"]["total"] == 1
+    assert body["summary"]["express_count"] == 1
+
+    # Publish raw ERP message directly to broker and stream 1 SSE event
+    broker = app.dependency_overrides[get_message_broker]()
+    broker.publish_order({"order_id": "ERP-SSE-01", **sample_order_dict})
+    sse = client.get("/v1/stream/deliveries?max_events=1&poll_interval=0.01")
+    assert sse.status_code == 200
+    assert "ERP-SSE-01" in sse.text
     app.dependency_overrides.clear()

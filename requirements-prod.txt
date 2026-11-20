@@ -10,4 +10,5 @@ scikit-learn
 joblib
 sqlalchemy
 psycopg[binary]
+pika
 mlflow
