@@ -23,11 +23,13 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements-prod.txt requirements.txt ./
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
+RUN pip install --no-cache-dir --upgrade pip setuptools>=80.0.0 wheel>=0.46.2 jaraco.context>=6.1.0 \
+    && if [ "$INSTALL_DEV" = "true" ]; then \
         pip install --no-cache-dir -r requirements.txt; \
     else \
         pip install --no-cache-dir -r requirements-prod.txt; \
     fi \
+    && rm -rf /opt/venv/lib/python3.11/site-packages/setuptools/_vendor/*.dist-info \
     && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 COPY src/ ./src/
@@ -44,11 +46,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install only the lightweight PostgreSQL runtime client library and create non-root user
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
+# Upgrade OS packages (e.g. zlib1g), install libpq5, strip unused system pip/setuptools, and create non-root user
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends libpq5 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/python3.11/site-packages/setuptools* \
+              /usr/local/lib/python3.11/site-packages/pip* \
+              /usr/local/lib/python3.11/site-packages/wheel* \
     && groupadd --gid 10001 appgroup \
     && useradd --uid 10001 --gid appgroup --shell /usr/sbin/nologin --no-create-home appuser \
     && mkdir -p /app/artifacts /app/data /app/local_databases \
