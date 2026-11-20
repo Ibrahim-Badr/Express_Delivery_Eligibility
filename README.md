@@ -8,9 +8,9 @@ Production-ready Machine Learning application and REST API that predicts whether
 
 This project transforms an experimental Jupyter Notebook into a modular, maintainable application following **Clean Architecture** and **SOLID / DRY / YAGNI** principles:
 
-- **Separation of Training & Serving**: Model training is executed as an independent execution process (`python -m src.cli train` or the **Apache Airflow** retraining DAG), never during `docker build` or inside an HTTP request. The FastAPI server loads the serialized `.joblib` model and hot-reloads whenever promoted artifacts change.
-- **Dependency Inversion (Ports & Adapters)**: High-level application logic (`api/`, `ml/`, `orchestration/`) depends solely on abstract contracts (`OrderRepository`, `ModelRepository`, `PredictionStore`) defined in `src/infra/abstractions/`. Concrete adapters (`PostgresOrderRepository`, `MemoryOrderStore`, `FileModelRepository`, `MemoryPredictionStore`, `PostgresPredictionStore`) are wired in `src/core/dependencies.py`.
-- **Single Feature Contract**: `FEATURE_COLUMNS` in `src/core/constants.py`, `normalize_order_payload()` in `src/etl/cleaning.py`, and `orders_to_dataframe()` in `src/etl/features.py` guarantee identical schema and column ordering between ERP ingestion, training, and inference.
+- **Separation of Training & Serving**: Model training is executed as an independent execution process (`python -m src.cli train` or the **Apache Airflow** retraining DAG), never during `docker build` or inside an HTTP request. `FileModelRepository` publishes artifacts atomically via write-then-rename (`os.replace`), and the FastAPI server hot-reloads safely on `st_mtime` without blocking the async event loop.
+- **Dependency Inversion (Ports & Adapters)**: High-level application logic (`api/`, `ml/`, `orchestration/`) depends solely on abstract contracts (`OrderRepository`, `ModelRepository`, `PredictionStore`, `OrderMessageBroker`) defined in `src/infra/abstractions/`. Concrete adapters (`PostgresOrderRepository`, `MemoryOrderStore`, `FileModelRepository`, `MemoryPredictionStore`, `PostgresPredictionStore`, `RabbitMQOrderBroker`, `MemoryOrderBroker`) are wired in `src/core/dependencies.py`.
+- **Single Feature Contract & Deterministic ETL**: `FEATURE_COLUMNS` in `src/core/constants.py`, `normalize_order_payload()` and row-wise `carrier_capacity` normalization in `src/etl/cleaning.py`, SHA-256 per-`order_id` deterministic labeling, and `orders_to_dataframe()` in `src/etl/features.py` guarantee consistent schema, units, and labels across ERP ingestion, training, and inference.
 
 ```mermaid
 flowchart LR
@@ -42,9 +42,10 @@ flowchart LR
 ```text
 Express_Delivery_Eligibility/
 ├── .github/
+│   ├── pull_request_template.md            # Standardized PR checklist (GitFlow, tests, docs)
 │   └── workflows/                          # Automated CI/CD pipelines (GitHub Actions)
 │       ├── ci.yml                          # Linting (Ruff + Pylint), Pytest & Docker Compose integration test
-│       └── release-docker.yml              # Automated Docker build, compression & push to GHCR on release
+│       └── release-docker.yml              # Automated Docker build, Trivy CVE scan & push to GHCR on release
 ├── airflow/                                # Apache Airflow Orchestrator
 │   ├── Dockerfile                          # Airflow 2.10.5 image with isolated ML app virtualenv
 │   └── dags/
@@ -57,13 +58,13 @@ Express_Delivery_Eligibility/
 ├── data/                                   # Local dataset directory
 │   └── raw_orders.csv                      # Synthetic orders dataset
 ├── erp/                                    # Self-contained ERP Simulator ("ERP Pro 2015")
-│   ├── Dockerfile                          # Container definition for the ERP order generator
-│   ├── requirements.txt                    # Simulator dependencies (psycopg[binary])
-│   ├── config.py                           # Simulator environment settings
+│   ├── Dockerfile                          # Hardened container definition (non-root erpuser)
+│   ├── requirements.txt                    # Simulator dependencies (psycopg[binary], pika)
+│   ├── config.py                           # Simulator environment settings (defaults live date to today)
 │   ├── erp_simulator.py                    # Main simulator entrypoint (historical + live stream)
 │   ├── generator.py                        # Order generation with legacy 2015/2017 schema shifts
-│   ├── simulator.py                        # Batching and orchestration logic
-│   └── storage.py                          # PostgreSQL writer and schema migrations
+│   ├── simulator.py                        # Batching and orchestration logic (PostgreSQL + RabbitMQ)
+│   └── storage.py                          # PostgreSQL writer and RabbitMQ pika publisher
 ├── local_databases/                        # Local SQLite runtime databases (ignored by Git)
 │   ├── .gitkeep
 │   ├── local.db                            # Local application state (orders & prediction records)
@@ -84,7 +85,7 @@ Express_Delivery_Eligibility/
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                             # FastAPI application entrypoint & router registration
-│   ├── cli.py                              # CLI entrypoint (train, serve, predict, retrain-daemon)
+│   ├── cli.py                              # CLI entrypoint (train, serve, predict, retrain-should-run, retrain-daemon)
 │   ├── domain/                             # Core business entities (framework-independent)
 │   │   ├── __init__.py
 │   │   └── entities.py                     # Immutable dataclasses: OrderEntity, PredictionEntity, ModelEntity
@@ -97,7 +98,7 @@ Express_Delivery_Eligibility/
 │   │   └── logging.py                      # Application logging setup
 │   ├── etl/                                # Data validation, cleaning & feature engineering
 │   │   ├── __init__.py
-│   │   ├── cleaning.py                     # validate_dataset(), clean_orders_data() & ERP imputation
+│   │   ├── cleaning.py                     # validate_dataset(), clean_orders_data(), deterministic labels & row-wise scaling
 │   │   └── features.py                     # orders_to_dataframe(), dataframe_to_training_entities() & ColumnTransformer
 │   ├── ml/                                 # Machine Learning pipeline, training, evaluation & inference
 │   │   ├── __init__.py
@@ -108,48 +109,54 @@ Express_Delivery_Eligibility/
 │   │   └── predictor.py                    # MLPredict service with configurable decision threshold
 │   ├── orchestration/                      # MLOps Continuous Retraining Orchestrator
 │   │   ├── __init__.py
-│   │   └── retraining.py                   # RetrainingOrchestrator daemon & candidate validation
+│   │   └── retraining.py                   # RetrainingOrchestrator hybrid trigger & Champion-Challenger validation
 │   ├── infra/                              # Infrastructure layer (Ports & Adapters)
 │   │   ├── __init__.py
 │   │   ├── abstractions/                   # Abstract interfaces (Ports)
+│   │   │   ├── message_broker.py           # OrderMessageBroker ABC
 │   │   │   ├── model_repository.py         # ModelRepository ABC
 │   │   │   ├── order_repository.py         # OrderRepository ABC
 │   │   │   └── prediction_store.py         # PredictionStore ABC
 │   │   ├── local/                          # Local / In-memory implementations (Dev & Test adapters)
-│   │   │   ├── file_model_repository.py    # Local filesystem joblib & JSON model repository
+│   │   │   ├── file_model_repository.py    # Atomic write-then-rename joblib & JSON model repository
+│   │   │   ├── memory_broker.py            # In-memory OrderMessageBroker for local dev & unit tests
 │   │   │   ├── memory_order_store.py       # InMemoryOrderRepository / MemoryOrderStore
 │   │   │   └── memory_prediction_store.py  # In-memory prediction store
+│   │   ├── messaging/                      # Streaming broker implementations (Prod adapter)
+│   │   │   └── rabbitmq_broker.py          # RabbitMQ OrderMessageBroker adapter using pika
 │   │   └── database/                       # SQL database implementations (Prod adapter)
 │   │       ├── database.py                 # SQLAlchemy engine & session factory
-│   │       ├── postgres_order_repository.py# PostgreSQL OrderRepository adapter for ERP orders
+│   │       ├── postgres_order_repository.py# PostgreSQL OrderRepository adapter (ordered & incremental queries)
 │   │       └── postgres_prediction_store.py# PostgreSQL / SQLAlchemy prediction store
 │   └── api/                                # HTTP Presentation layer (FastAPI)
 │       ├── __init__.py
+│       ├── dashboard_ui.py                 # Accessible Logistics Operator real-time dashboard HTML/CSS/JS
 │       ├── error_handlers.py               # Exception to HTTP status code mappings (404, 422, 503)
 │       ├── schemas/                        # Pydantic request/response schemas (OpenAPI contract)
 │       │   └── __init__.py
-│       └── routers/                        # Versioned route handlers
+│       └── routers/                        # Versioned non-blocking route handlers
 │           ├── health.py                   # GET /health & GET /health/ready
+│           ├── model.py                    # GET /v1/model
 │           ├── orders.py                   # POST /v1/orders & GET /v1/orders/{order_id}
 │           ├── predictions.py              # POST /v1/predictions, /batch, GET /v1/predictions/{order_id}
-│           └── model.py                    # GET /v1/model
-├── tests/                                  # Automated Pytest suite (20 tests)
+│           └── streaming.py                # GET /dashboard, SSE /v1/stream/deliveries, /recent, /simulate
+├── tests/                                  # Automated Pytest suite (33 tests)
 │   ├── conftest.py                         # Shared fixtures, FakePipeline & FakeModelRepository
 │   ├── etl/
-│   │   └── test_cleaning.py                # Unit tests for dataset validation, cleaning & feature contract
+│   │   └── test_cleaning.py                # Validation, mixed-unit scaling, deterministic labeling & feature contract
 │   ├── ml/
-│   │   └── test_ml.py                      # Unit tests for MLPredict thresholds, splitter & MLTrainer
+│   │   └── test_ml.py                      # MLPredict thresholds, splitter & MLTrainer tests
 │   ├── orchestration/
-│   │   └── test_retraining.py              # Unit tests for RetrainingOrchestrator promotion & rejection
+│   │   └── test_retraining.py              # Hybrid threshold, Champion-Challenger & persisted state tests
 │   ├── infra/
-│   │   └── test_repositories.py            # Contract tests for OrderRepository, PredictionStore & FileModelRepository
+│   │   └── test_repositories.py            # OrderRepository, atomic FileModelRepository, ERP dates & pika broker tests
 │   └── api/
-│       └── test_api.py                     # FastAPI endpoint tests (200, 202, 422, 503)
+│       └── test_api.py                     # REST API, SSE streaming, dashboard & error handler tests
 ├── .dockerignore                           # Excludes non-production files from Docker build context
 ├── .env.example                            # Example environment variables template
-├── Dockerfile                              # Hardened 2-stage production container image (non-root user)
+├── Dockerfile                              # Hardened 2-stage production container image (non-root appuser)
 ├── docker-compose.test.yml                 # Automated containerized test environment (Postgres + ERP + Trainer + Pytest)
-├── docker-compose.prod.yml                 # Production environment (Postgres + ERP + Trainer + FastAPI + Orchestrator)
+├── docker-compose.prod.yml                 # Production stack (Postgres + RabbitMQ + ERP + Trainer + FastAPI + Airflow)
 ├── LICENSE                                 # MIT License
 ├── openapi.yml                             # OpenAPI 3.1 specification contract
 ├── order.json                              # Sample order payload for CLI and HTTP testing
@@ -252,7 +259,7 @@ docker compose -f docker-compose.prod.yml down
 Services orchestrated:
 1. **`db` (`postgres:17-alpine`)**: Stateful production ERP database isolated on the Docker internal network with persistent volume `prod_postgres_data`.
 2. **`rabbitmq` (`rabbitmq:3.13-management-alpine`)**: AMQP streaming broker (`live_orders` durable queue) with Management UI on [http://127.0.0.1:15672](http://127.0.0.1:15672).
-3. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds to PostgreSQL and RabbitMQ (`pika`).
+3. **`erp-simulator`**: Enterprise ERP simulator (`ERP Pro 2015`) continuously publishing batches of 5 orders every 5 seconds stamped with `date.today()` (configurable via `ADVANCE_DATE_PER_BATCH`) to PostgreSQL and RabbitMQ (`pika`).
 4. **`trainer`**: Initial training batch job waiting for PostgreSQL historical seeding before building initial model artifacts.
 5. **`api` (`FastAPI`)**: Stateless prediction API, SSE consumer (`pika`), and Logistics Operator Dashboard ([http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard)) running as non-root `appuser` on port `8000`.
 6. **`airflow` (`Apache Airflow 2.10.5`)**: Scheduled DAG (`express_delivery_retraining`) monitoring PostgreSQL order growth via the dynamic hybrid trigger (`max(300, 5% * last_trained_count)`), running same-split Champion vs. Challenger validation before promoting artifacts. Web UI available at [http://127.0.0.1:8080](http://127.0.0.1:8080).
@@ -262,23 +269,26 @@ Services orchestrated:
 ## 6. Complete Local Testing Guide (All Layers)
 
 ### Layer 1: Automated Unit & Contract Tests (Pytest)
-Run all 18 automated unit, contract, and integration tests:
+Run all 33 automated unit, contract, and integration tests:
 ```bash
 python -m pytest -v
 ```
 
 Run specific test modules:
 ```bash
-# Infrastructure and Repository contracts (PostgresOrderRepository, MemoryOrderStore, ModelRepository)
+# Infrastructure, atomic model repository, ERP simulator dates & RabbitMQ pika broker contracts
 python -m pytest tests/infra/test_repositories.py -v
 
-# ETL pipeline, data cleaning, legacy schema migration imputation, category harmonization
+# ETL pipeline, row-wise carrier_capacity scaling, deterministic labels & category harmonization
 python -m pytest tests/etl/test_cleaning.py -v
 
 # ML training, train/test stratified splitter, decision thresholds, and MLflow logging
 python -m pytest tests/ml/test_ml.py -v
 
-# FastAPI REST API endpoints, liveness/readiness probes, and 422/503 exception handlers
+# Continuous retraining orchestrator, hybrid thresholds & Champion-Challenger validation
+python -m pytest tests/orchestration/test_retraining.py -v
+
+# FastAPI REST API endpoints, SSE streaming, dashboard & 422/503 exception handlers
 python -m pytest tests/api/test_api.py -v
 ```
 
@@ -359,6 +369,16 @@ Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/orders `
 # Retrieve active model card, performance metrics, and governance limitations
 Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/model -Method GET
 ```
+
+#### E. Real-Time Streaming & Logistics Operator Dashboard (`/dashboard` & `/v1/stream/*`)
+```powershell
+# Publish and immediately score a simulated live order through RabbitMQ / broker
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/stream/simulate -Method POST
+
+# Fetch recent scored live deliveries and daily preparation KPIs
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/stream/deliveries/recent -Method GET
+```
+Open [http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard) in a browser to monitor incoming Express vs. Standard deliveries live via SSE.
 
 ### Layer 6: MLflow Experiment Tracking Dashboard
 To visualize model runs, ROC-AUC metrics, and hyperparameter comparisons in the browser:

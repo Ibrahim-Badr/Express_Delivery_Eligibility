@@ -6,6 +6,7 @@ The following versions of the Express Delivery Eligibility service are currently
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.1.x   | :white_check_mark: |
 | 1.0.x   | :white_check_mark: |
 | < 1.0   | :x:                |
 
@@ -34,7 +35,8 @@ We will acknowledge receipt within **48 hours** and provide a remediation timeli
 - **Zero Secrets in Git**: `.env` and environment-specific override files (`.env.*` except `.env.example`) are excluded via `.gitignore`. Only `.env.example` with non-sensitive placeholders is committed.
 - **Cloud Secret Storage**: Production database credentials (`DATABASE_URL`) and API secrets are stored securely in **Azure Key Vault** and injected at runtime.
 
-### Container Security
-- The production Docker image uses a **multi-stage build** (`python:3.11-slim`) that strips compilers (`gcc`) and build-time headers from the final image.
-- The container runs as an unprivileged **non-root user** (`appuser`, UID `10001`) with `no-new-privileges:true` enforced in `docker-compose.prod.yml`.
-- Every release image is automatically scanned for `CRITICAL` and `HIGH` OS and Python package CVEs using **Aqua Security Trivy** (`aquasecurity/trivy-action`) in the GitHub Actions release pipeline before being published to `ghcr.io`.
+### Container & Network Security
+- **Multi-Stage Minimal Images**: The production Docker image (`Dockerfile`) uses a 2-stage build (`python:3.11-slim`) that strips build compilers (`gcc`, `libpq-dev`), applies OS security upgrades (`apt-get upgrade`), and removes redundant system `pip`/`setuptools`/`wheel` metadata so images pass Aqua Trivy scans with zero `CRITICAL`/`HIGH` CVEs.
+- **Non-Root Least Privilege**: Every custom service runs as a dedicated unprivileged user — `appuser` (UID/GID `10001`) for FastAPI/Trainer, `erpuser` (UID/GID `10002`) for `erp-simulator`, and `airflow` (with shared group `10001` for artifact volume access) for Apache Airflow — with `no-new-privileges:true` enforced in `docker-compose.prod.yml`.
+- **Network Isolation**: PostgreSQL (`db`) is kept strictly on the internal Docker network with no host port exposure in production, while operational UIs (`airflow` on `127.0.0.1:8080`, `rabbitmq` management on `127.0.0.1:15672`) are bound exclusively to loopback.
+- **Automated Vulnerability Scanning**: Every release image is scanned for `CRITICAL` and `HIGH` OS and Python package CVEs using **Aqua Security Trivy** (`aquasecurity/trivy-action`) in the GitHub Actions release pipeline before being published to `ghcr.io`.

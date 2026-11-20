@@ -9,9 +9,9 @@ Following Clean Architecture and Dependency Inversion (Ports & Adapters), high-l
 
 ## Decision
 We define abstract repository ports in `src/infra/abstractions/` and select concrete adapters at runtime via the composition root in `src/core/dependencies.py`:
-1. **Abstract Port (`OrderRepository`)**: Exposes `save()`, `get()`, `get_all()`, `count()`, and `get_training_data()` in `src/infra/abstractions/order_repository.py`.
+1. **Abstract Port (`OrderRepository`)**: Exposes `save()`, `get()`, `get_all()`, `get_orders_since()`, `get_orders_by_date()`, `count()`, and `get_training_data()` in `src/infra/abstractions/order_repository.py`.
 2. **Local / Unit-Test Adapter (`MemoryOrderStore`)**: An in-memory Python dictionary backed by `data/raw_orders.csv` (or synthetic generation fallback) for zero-dependency unit tests and offline CLI runs.
-3. **Production Adapter (`PostgresOrderRepository`)**: A SQLAlchemy-backed adapter (`src/infra/database/postgres_order_repository.py`) activated whenever `settings.database_url` targets PostgreSQL (`postgresql://...`), reading directly from the operational ERP `orders` table and running the ETL cleaning pipeline (`clean_orders_data()`, `validate_dataset()`).
+3. **Production Adapter (`PostgresOrderRepository`)**: A SQLAlchemy-backed adapter (`src/infra/database/postgres_order_repository.py`) activated whenever `settings.database_url` targets PostgreSQL (`postgresql://...`), querying the operational ERP `orders` table in deterministic `ORDER BY order_id ASC` order and running the ETL pipeline (row-wise `carrier_capacity` scaling, SHA-256 per-`order_id` deterministic labeling, `clean_orders_data()`, and `validate_dataset()`).
 4. **Prediction Persistence (`PredictionStore`)**: Uses `MemoryPredictionStore` locally and `PostgresPredictionStore` in PostgreSQL environments.
 
 ## Consequences

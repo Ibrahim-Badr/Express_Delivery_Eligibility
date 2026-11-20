@@ -43,7 +43,7 @@ python -m pip install -r requirements.txt
 
 1. **Clean Architecture & SOLID**:
    - Keep business entities in `src/domain/`.
-   - Never import concrete infrastructure adapters (`src/infra/local/` or `src/infra/database/`) directly inside `src/api/routers/` or `src/ml/`; always inject abstractions via `src/core/dependencies.py`.
+   - Never import concrete infrastructure adapters (`src/infra/local/`, `src/infra/database/`, or `src/infra/messaging/`) directly inside `src/api/routers/` or `src/ml/`; always inject abstractions via `src/core/dependencies.py`.
 2. **English Only**:
    - All code, comments, docstrings, commit messages, and documentation must be written in English.
 3. **Linting & Formatting**:
@@ -57,7 +57,7 @@ python -m pip install -r requirements.txt
 
 ## 4. Testing Requirements
 
-Every new feature or bugfix must include corresponding tests under `tests/` (`etl`, `ml`, `infra`, or `api`).
+Every new feature or bugfix must include corresponding tests under `tests/` (`etl`, `ml`, `orchestration`, `infra`, or `api`).
 Run the full test suite before opening a Pull Request:
 
 ```bash

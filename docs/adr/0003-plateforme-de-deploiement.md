@@ -1,7 +1,7 @@
 # ADR 0003: Deployment Platform Choice
 
 ## Context
-The Express Delivery Eligibility platform consists of multiple cooperating services: PostgreSQL (`db`), the ERP data simulator (`erp-simulator`), the initial training job (`trainer`), the continuous retraining daemon (`orchestrator`), and the FastAPI inference service (`api`). We must select a compute and container platform under a strict student budget on Microsoft Azure ($88 credit and 12-month free tiers: 750 hours/month Linux VM and 750 hours/month Azure Database for PostgreSQL).
+The Express Delivery Eligibility platform consists of multiple cooperating services: PostgreSQL (`db`), RabbitMQ (`rabbitmq`), the ERP data simulator (`erp-simulator`), the initial training job (`trainer`), the FastAPI inference & Logistics Operator Dashboard service (`api`), and the Apache Airflow retraining orchestrator (`airflow`). We must select a compute and container platform under a strict student budget on Microsoft Azure ($88 credit and 12-month free tiers: 750 hours/month Linux VM and 750 hours/month Azure Database for PostgreSQL).
 
 ## Decision
 We select **Docker & Docker Compose** running on a **Hybrid Azure IaaS / PaaS Platform**:

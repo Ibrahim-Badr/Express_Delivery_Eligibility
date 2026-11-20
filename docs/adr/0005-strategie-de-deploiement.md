@@ -10,13 +10,13 @@ We implement a **GitFlow + IaC + GitHub Actions CI/CD + Dual Docker Compose** st
    * `release/*` branches stabilize candidates for Test validation before merging into `main` (Prod) and tagging (`vX.Y.Z`).
    * `hotfix/*` branches patch critical `main` defects and merge back into both `main` and `develop`.
 2. **Continuous Integration (`.github/workflows/ci.yml`)**:
-   * Runs `ruff check .`, `pylint src/`, and `pytest -v` on pushes and PRs without connecting to production databases or training ML models at CI/build time.
+   * Runs `quality-and-tests` (`ruff check .`, `pylint src/`, and `pytest -v`) followed by `docker-integration` (validating both Compose files, running the isolated `docker-compose.test.yml` stack, and building the `airflow` image) without connecting to production databases or baking ML artifacts into the image.
 3. **Continuous Delivery (`.github/workflows/release-docker.yml`)**:
    * On GitHub release or `v*.*.*` tag, builds the hardened 2-stage production `Dockerfile` (without baked-in training artifacts), scans it with **Aqua Trivy**, and pushes to **GHCR (`ghcr.io`)**.
 4. **Infrastructure & Runtime Environments**:
    * **Infrastructure as Code (Terraform)** provisions Azure resources deterministically (`terraform apply` / `terraform destroy`).
-   * **Test Stack (`docker-compose.test.yml`)**: Runs `db` (port `5433`), bounded `erp-simulator`, `trainer`, and containerized `test-runner`.
-   * **Production Stack (`docker-compose.prod.yml`)**: Runs `db` (port `5432`), continuous `erp-simulator`, initial `trainer`, `api` (FastAPI), and `orchestrator` (`RetrainingOrchestrator` with dynamic hybrid trigger and Champion vs. Challenger validation).
+   * **Test Stack (`docker-compose.test.yml`)**: Runs `db` (port `5433`), bounded `erp-simulator`, `trainer`, and containerized `test-runner` (mounting `./erp`, `./tests`, and `./pyproject.toml` read-only).
+   * **Production Stack (`docker-compose.prod.yml`)**: Runs `db` (internal network only), `rabbitmq` (`127.0.0.1:15672` management UI), continuous `erp-simulator` (publishing to PostgreSQL and RabbitMQ via `pika`), initial `trainer`, `api` (FastAPI + SSE `/dashboard`), and `airflow` (`127.0.0.1:8080`, running `express_delivery_retraining` with dynamic hybrid trigger and Champion vs. Challenger validation).
 
 ## Consequences
 * **Positive**:
