@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: livraison_express
       POSTGRES_USER: livraison
       POSTGRES_PASSWORD: livraison
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - prod_postgres_data:/var/lib/postgresql/data
     security_opt:
