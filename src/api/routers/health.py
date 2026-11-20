@@ -14,7 +14,7 @@ async def get_health():
 
 
 @router.get("/health/ready", response_model=ReadinessStatus)
-async def get_readiness(
+def get_readiness(
     response: Response,
     model_repo: ModelRepository = Depends(get_model_repository),
 ):

@@ -48,13 +48,13 @@ async def root_redirect():
 
 
 @app.post("/predict", response_model=Prediction, tags=["predictions"])
-async def predict_root_alias(
+def predict_root_alias(
     order: OrderFeatures,
     model_repo: ModelRepository = Depends(get_model_repository),
     pred_store: PredictionStore = Depends(get_prediction_store),
 ):
     """Root alias for POST /v1/predictions."""
-    return await predictions.create_prediction(
+    return predictions.create_prediction(
         order=order,
         model_repo=model_repo,
         pred_store=pred_store,

@@ -52,7 +52,7 @@ def process_prediction_task(
 
 
 @router.post("", response_model=OrderAccepted, status_code=202)
-async def create_order(
+def create_order(
     order: OrderFeatures,
     background_tasks: BackgroundTasks,
     order_store: OrderRepository = Depends(get_order_repository),
@@ -62,6 +62,7 @@ async def create_order(
     order_id = order.order_id or f"CMD-{uuid.uuid4().hex[:6]}"
     order_dict = order.model_dump(exclude_none=True)
     order_dict["order_id"] = order_id
+    order_dict.setdefault("order_date", datetime.now(timezone.utc).date().isoformat())
 
     order_store.save(order_id, order_dict)
     background_tasks.add_task(
@@ -72,7 +73,7 @@ async def create_order(
 
 
 @router.get("/{order_id}", response_model=OrderFeatures)
-async def get_order(
+def get_order(
     order_id: str, order_store: OrderRepository = Depends(get_order_repository)
 ):
     order = order_store.get(order_id)

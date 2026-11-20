@@ -55,7 +55,13 @@ def _score_and_record_order(
     enriched_raw["order_id"] = order_id
     normalized = normalize_order_payload(enriched_raw)
 
-    order_repo.save(order_id, enriched_raw)
+    order_to_store = {
+        **normalized,
+        "order_date": enriched_raw.get(
+            "order_date", datetime.now(timezone.utc).date().isoformat()
+        ),
+    }
+    order_repo.save(order_id, order_to_store)
 
     start_time = datetime.now()
     pred_res = predict_single_order(pipeline, normalized)
@@ -107,7 +113,7 @@ def _drain_and_score_orders(
 
 
 @router.get("/v1/stream/deliveries/recent")
-async def get_recent_deliveries(
+def get_recent_deliveries(
     limit: int = 25,
     broker: OrderMessageBroker = Depends(get_message_broker),
     model_repo: ModelRepository = Depends(get_model_repository),
@@ -121,7 +127,7 @@ async def get_recent_deliveries(
 
 
 @router.post("/v1/stream/simulate")
-async def simulate_live_order(
+def simulate_live_order(
     order: Optional[OrderFeatures] = None,
     broker: OrderMessageBroker = Depends(get_message_broker),
     model_repo: ModelRepository = Depends(get_model_repository),
@@ -180,8 +186,13 @@ async def stream_deliveries(
     async def event_generator():
         sent = 0
         while max_events is None or sent < max_events:
-            events = _drain_and_score_orders(
-                broker, model_repo, order_repo, pred_store, max_messages=10
+            events = await asyncio.to_thread(
+                _drain_and_score_orders,
+                broker,
+                model_repo,
+                order_repo,
+                pred_store,
+                10,
             )
             for event in events:
                 yield f"data: {json.dumps(event)}\n\n"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict
 
@@ -30,35 +31,73 @@ class FileModelRepository(ModelRepository):
     def is_available(self) -> bool:
         return self.model_joblib_path.exists() and self.model_card_path.exists()
 
+    def _atomic_write_joblib(self, obj: Any, target: Path) -> None:
+        """Write a joblib artifact to a sibling temp file and atomically swap it into place."""
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=self.artifacts_dir,
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+            joblib.dump(obj, tmp_path)
+            try:
+                os.chmod(tmp_path, 0o664)
+            except OSError:
+                pass
+            os.replace(tmp_path, target)
+            tmp_path = None
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
+    def _atomic_write_text(self, content: str, target: Path) -> None:
+        """Write a UTF-8 text artifact to a sibling temp file and atomically swap it into place."""
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.artifacts_dir,
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp_file:
+                tmp_file.write(content)
+                tmp_path = Path(tmp_file.name)
+            try:
+                os.chmod(tmp_path, 0o664)
+            except OSError:
+                pass
+            os.replace(tmp_path, target)
+            tmp_path = None
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
     def save(self, pipeline: Any, model_card: ModelEntity | Dict[str, Any]) -> None:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         card_dict = (
             model_card.to_dict() if isinstance(model_card, ModelEntity) else dict(model_card)
         )
 
-        joblib.dump(pipeline, self.model_joblib_path)
-
-        self.model_card_path.write_text(json.dumps(card_dict, indent=2), encoding="utf-8")
-        self.metrics_path.write_text(
+        # Publish model binary first, metadata second, and model_card last so concurrent
+        # API hot-reloads never read truncated files or observe a card without its model.
+        self._atomic_write_joblib(pipeline, self.model_joblib_path)
+        self._atomic_write_text(
             json.dumps(card_dict.get("metrics", {}), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        self.features_path.write_text(
-            json.dumps(card_dict.get("features", []), indent=2),
-            encoding="utf-8",
-        )
-
-        # Ensure group-writable permissions across shared Docker volumes (appuser + airflow)
-        for path in (
-            self.model_joblib_path,
-            self.model_card_path,
             self.metrics_path,
+        )
+        self._atomic_write_text(
+            json.dumps(card_dict.get("features", []), indent=2),
             self.features_path,
-        ):
-            try:
-                os.chmod(path, 0o664)
-            except OSError:
-                pass
+        )
+        self._atomic_write_text(
+            json.dumps(card_dict, indent=2),
+            self.model_card_path,
+        )
 
         self._pipeline = pipeline
         self._pipeline_mtime = self.model_joblib_path.stat().st_mtime

@@ -48,7 +48,7 @@ def _execute_and_store_prediction(
 
 
 @router.post("", response_model=Prediction)
-async def create_prediction(
+def create_prediction(
     order: OrderFeatures,
     model_repo: ModelRepository = Depends(get_model_repository),
     pred_store: PredictionStore = Depends(get_prediction_store),
@@ -61,7 +61,7 @@ async def create_prediction(
 
 
 @router.post("/batch", response_model=BatchPredictionResponse)
-async def create_batch_predictions(
+def create_batch_predictions(
     batch: BatchPredictionRequest,
     model_repo: ModelRepository = Depends(get_model_repository),
     pred_store: PredictionStore = Depends(get_prediction_store),
@@ -78,7 +78,7 @@ async def create_batch_predictions(
 
 
 @router.get("/{order_id}", response_model=Prediction)
-async def get_prediction(
+def get_prediction(
     order_id: str,
     pred_store: PredictionStore = Depends(get_prediction_store),
 ):

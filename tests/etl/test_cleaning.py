@@ -4,7 +4,12 @@ import pytest
 from src.api.schemas import OrderFeatures
 from src.core.constants import FEATURE_COLUMNS
 from src.domain.entities import OrderEntity
-from src.etl.cleaning import clean_orders_data, normalize_order_payload, validate_dataset
+from src.etl.cleaning import (
+    clean_orders_data,
+    compute_ground_truth_labels,
+    normalize_order_payload,
+    validate_dataset,
+)
 from src.etl.features import orders_to_dataframe
 from src.ml.data_generation import generate_orders_dataset
 
@@ -70,3 +75,39 @@ def test_normalize_order_payload_bridges_erp_and_api_schemas(sample_order_dict):
     # Idempotent on canonical API payload
     api_normalized = normalize_order_payload(sample_order_dict)
     assert OrderFeatures(**api_normalized).weather == sample_order_dict["weather"]
+
+
+def test_compute_ground_truth_labels_is_deterministic_across_row_shuffles():
+    df = generate_orders_dataset(n_rows=40, random_state=42).drop(columns=["express_eligible"])
+    labels_original = compute_ground_truth_labels(df, random_state=42)
+    mapping_original = dict(zip(df["order_id"], labels_original))
+
+    shuffled = df.sample(frac=1.0, random_state=99).reset_index(drop=True)
+    labels_shuffled = compute_ground_truth_labels(shuffled, random_state=42)
+    mapping_shuffled = dict(zip(shuffled["order_id"], labels_shuffled))
+
+    assert mapping_original == mapping_shuffled
+
+
+def test_clean_orders_data_preserves_mixed_erp_and_api_carrier_capacity():
+    erp_rows = generate_orders_dataset(n_rows=30, random_state=42).drop(
+        columns=["express_eligible"]
+    )
+    erp_rows["carrier_capacity"] = 35.0  # Raw ERP scale [5, 50]
+
+    api_row = erp_rows.iloc[[0]].copy()
+    api_row["order_id"] = "API-MIXED-01"
+    api_row["carrier_capacity"] = 0.85  # Already-normalized API scale [0, 1]
+
+    invalid_row = erp_rows.iloc[[1]].copy()
+    invalid_row["order_id"] = "BAD-CAP-01"
+    invalid_row["carrier_capacity"] = 1.5  # Invalid out-of-range value in (1, 5)
+
+    mixed = pd.concat([erp_rows, api_row, invalid_row], ignore_index=True)
+    cleaned = clean_orders_data(mixed)
+
+    assert "BAD-CAP-01" not in set(cleaned["order_id"])
+    api_cap = cleaned.loc[cleaned["order_id"] == "API-MIXED-01", "carrier_capacity"].iloc[0]
+    erp_cap = cleaned.loc[cleaned["order_id"] == "CMD-000001", "carrier_capacity"].iloc[0]
+    assert api_cap == pytest.approx(0.85)
+    assert erp_cap == pytest.approx(0.70)

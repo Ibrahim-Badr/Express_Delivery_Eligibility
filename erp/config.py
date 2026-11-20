@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 
@@ -18,10 +18,16 @@ class SimulationConfig:
     recent_history_orders: int = 1_000
     live_order_limit: int = 0
     log_level: str = "INFO"
-    today: date = date.today()
+    today: date = field(default_factory=date.today)
+    advance_date_per_batch: bool = False
 
     @classmethod
     def from_environment(cls) -> SimulationConfig:
+        advance_flag = os.getenv("ADVANCE_DATE_PER_BATCH", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         return cls(
             postgres_dsn=os.getenv("POSTGRES_DSN", ""),
             rabbitmq_url=os.getenv("RABBITMQ_URL", ""),
@@ -33,4 +39,5 @@ class SimulationConfig:
             live_order_limit=int(os.getenv("LIVE_ORDER_LIMIT", "0")),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             today=date.today(),
+            advance_date_per_batch=advance_flag,
         )

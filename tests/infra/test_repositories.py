@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 from datetime import date
@@ -9,6 +10,9 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from erp.config import SimulationConfig
+from erp.generator import OrderGenerator
+from erp.simulator import ErpSimulator
 from erp.storage import RabbitMQWriter
 from src.domain.entities import ModelEntity
 from src.infra.database.postgres_order_repository import PostgresOrderRepository
@@ -248,3 +252,70 @@ def test_rabbitmq_pika_adapters_with_mocked_connection(sample_order_dict: Dict[s
         consumed = broker.consume_orders(max_messages=5)
         assert len(consumed) == 1
         assert consumed[0]["order_id"] == "ERP-999"
+
+
+def test_postgres_order_repository_get_all_is_ordered_by_order_id(
+    sample_order_dict: Dict[str, Any],
+):
+    test_engine = create_engine("sqlite:///:memory:")
+    test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    repo = PostgresOrderRepository(db_engine=test_engine, session_factory=test_session)
+
+    for oid in ("ERP-00000003", "ERP-00000001", "ERP-00000002"):
+        repo.save(oid, sample_order_dict)
+
+    ordered = [row["order_id"] for row in repo.get_all()]
+    assert ordered == ["ERP-00000001", "ERP-00000002", "ERP-00000003"]
+
+
+def test_file_model_repository_saves_atomically_without_tmp_leftovers(tmp_path: Path):
+    repo = FileModelRepository(artifacts_dir=tmp_path)
+    card = ModelEntity(
+        project="eligibilite-livraison-express",
+        model_version="1.0.0",
+        model_type="LogisticRegression",
+        task="binary classification",
+        target="express_eligible",
+        threshold=0.5,
+        features=["distance_km"],
+        metrics={"roc_auc": 0.91},
+    )
+    repo.save(FakePipeline(positive_proba=0.75), card)
+
+    tmp_files = list(tmp_path.glob("*.tmp"))
+    assert tmp_files == []
+    assert repo.load_pipeline().positive_proba == 0.75
+
+
+def test_erp_simulator_live_batches_default_to_today():
+    written_batches: list[list[dict[str, object]]] = []
+
+    class CaptureWriter:
+        def write(self, orders):
+            written_batches.append(list(orders))
+            return len(orders)
+
+        def close(self):
+            return None
+
+    config = SimulationConfig(
+        batch_size=2,
+        interval_seconds=0.0,
+        postgres_old_history_orders=0,
+        recent_history_orders=0,
+        live_order_limit=4,
+        advance_date_per_batch=False,
+    )
+    simulator = ErpSimulator(
+        config=config,
+        generator=OrderGenerator(),
+        postgres=CaptureWriter(),
+        logger=logging.getLogger("test-erp"),
+    )
+    with patch("erp.simulator.time.sleep"):
+        simulator._write_live_stream()
+
+    assert len(written_batches) == 2
+    today = date.today()
+    for batch in written_batches:
+        assert all(order["order_date"] == today for order in batch)

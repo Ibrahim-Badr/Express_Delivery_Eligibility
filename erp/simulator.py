@@ -74,8 +74,11 @@ class ErpSimulator:
             self.logger.info("Next live sequence: ERP-%08d.", sequence)
         simulation_date = self.config.today
         while self.config.live_order_limit == 0 or sequence <= self.config.live_order_limit:
+            batch_date = (
+                simulation_date if self.config.advance_date_per_batch else date.today()
+            )
             size = self._next_batch_size(sequence)
-            orders = self.generator.live_batch(sequence, size, simulation_date)
+            orders = self.generator.live_batch(sequence, size, batch_date)
             postgres_count = self.postgres.write(orders)
             broker_count = self.broker.write(orders)
             self.logger.info(
@@ -86,7 +89,8 @@ class ErpSimulator:
                 orders[-1]["order_id"],
             )
             sequence += size
-            simulation_date += timedelta(days=1)
+            if self.config.advance_date_per_batch:
+                simulation_date += timedelta(days=1)
             time.sleep(self.config.interval_seconds)
         self.logger.info("Live stream completed: LIVE_ORDER_LIMIT reached.")
 

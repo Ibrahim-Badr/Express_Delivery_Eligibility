@@ -120,10 +120,10 @@ class PostgresOrderRepository(OrderRepository):
             db.close()
 
     def get_all(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Retrieve stored orders up to the given limit."""
+        """Retrieve stored orders ordered deterministically by order_id."""
         db: Session = self._session_factory()
         try:
-            query = db.query(OrderRecord)
+            query = db.query(OrderRecord).order_by(OrderRecord.order_id.asc())
             if limit is not None:
                 query = query.limit(limit)
             records = query.all()

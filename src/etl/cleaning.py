@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
@@ -8,6 +9,9 @@ import numpy as np
 import pandas as pd
 
 from src.core.constants import FEATURE_COLUMNS
+
+ERP_CARRIER_CAPACITY_MIN = 5.0
+ERP_CARRIER_CAPACITY_MAX = 50.0
 
 WEATHER_MAP = {
     "clear": "normal",
@@ -73,6 +77,28 @@ def harmonize_categories(df: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def _normalize_carrier_capacity_series(series: pd.Series) -> pd.Series:
+    """Scale ERP-range carrier_capacity [5, 50] to [0, 1] row-wise.
+
+    Already-normalized values in [0, 1] are preserved unchanged; invalid values in
+    (1, 5) remain unscaled so downstream sanity checks reject them.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    erp_mask = numeric >= ERP_CARRIER_CAPACITY_MIN
+    normalized = numeric.copy()
+    normalized.loc[erp_mask] = (
+        numeric.loc[erp_mask] / ERP_CARRIER_CAPACITY_MAX
+    ).clip(0.0, 1.0)
+    return normalized
+
+
+def _deterministic_label(order_id: str, probability: float, seed: int = 42) -> int:
+    """Derive a reproducible Bernoulli(probability) label keyed on (seed, order_id)."""
+    digest = hashlib.sha256(f"{seed}:{order_id}".encode("utf-8")).digest()
+    uniform = int.from_bytes(digest[:8], "big") / float(1 << 64)
+    return int(uniform < probability)
+
+
 def normalize_order_payload(raw_order: Mapping[str, Any]) -> dict[str, Any]:
     """Normalize a single raw ERP or stored order dict into the API/ML feature contract.
 
@@ -90,8 +116,10 @@ def normalize_order_payload(raw_order: Mapping[str, Any]) -> dict[str, Any]:
     prep_time = float(prep_raw) if prep_raw is not None else 20.0
 
     carrier_capacity = float(raw_order["carrier_capacity"])
-    if carrier_capacity > 1.0:
-        carrier_capacity = round(min(max(carrier_capacity / 50.0, 0.0), 1.0), 4)
+    if carrier_capacity >= ERP_CARRIER_CAPACITY_MIN:
+        carrier_capacity = round(
+            min(max(carrier_capacity / ERP_CARRIER_CAPACITY_MAX, 0.0), 1.0), 4
+        )
 
     normalized: dict[str, Any] = {
         "hour": int(raw_order["hour"]),
@@ -119,8 +147,7 @@ def normalize_order_payload(raw_order: Mapping[str, Any]) -> dict[str, Any]:
 def compute_ground_truth_labels(
     df: pd.DataFrame, random_state: int = 42
 ) -> pd.Series:
-    """Compute deterministic business eligibility labels for unlabelled ERP orders."""
-    rng = np.random.default_rng(random_state)
+    """Compute order_id-deterministic eligibility labels for unlabelled ERP orders."""
     data = harmonize_categories(df)
 
     zone_penalty = data["delivery_zone"].map(
@@ -133,9 +160,7 @@ def compute_ground_truth_labels(
 
     customer_bonus = (data["customer_type"] == "premium").astype(int) * 0.15
 
-    carrier = pd.to_numeric(data["carrier_capacity"], errors="coerce").fillna(0.5)
-    if (carrier > 1.0).any():
-        carrier = (carrier / 50.0).clip(0.0, 1.0)
+    carrier = _normalize_carrier_capacity_series(data["carrier_capacity"]).fillna(0.5)
 
     prep_time = pd.to_numeric(data["preparation_time_min"], errors="coerce").fillna(20.0)
     weekend = pd.to_numeric(data["weekend"], errors="coerce").fillna(0)
@@ -159,7 +184,16 @@ def compute_ground_truth_labels(
     ).astype(float)
 
     probability = 1.0 / (1.0 + np.exp(-score.to_numpy(dtype=float)))
-    return pd.Series(rng.binomial(1, probability), index=df.index, name="express_eligible")
+    if "order_id" in data.columns:
+        order_ids = data["order_id"].astype(str).tolist()
+    else:
+        order_ids = [str(idx) for idx in df.index]
+
+    labels = [
+        _deterministic_label(order_id, float(prob), seed=random_state)
+        for order_id, prob in zip(order_ids, probability)
+    ]
+    return pd.Series(labels, index=df.index, dtype=int, name="express_eligible")
 
 
 def validate_dataset(df: pd.DataFrame) -> bool:
@@ -256,11 +290,11 @@ def clean_orders_data(df: pd.DataFrame) -> pd.DataFrame:
             median_prep = 20.0
         cleaned["preparation_time_min"] = cleaned["preparation_time_min"].fillna(median_prep)
 
-    # Normalize carrier_capacity if column represents the ERP scale [5, 50] (median > 2.0)
+    # Normalize ERP carrier_capacity [5, 50] to [0, 1] row-wise without corrupting API [0, 1] rows
     if "carrier_capacity" in cleaned.columns:
-        valid_caps = pd.to_numeric(cleaned["carrier_capacity"], errors="coerce").dropna()
-        if not valid_caps.empty and valid_caps.median() > 2.0:
-            cleaned["carrier_capacity"] = (cleaned["carrier_capacity"] / 50.0).clip(0.0, 1.0)
+        cleaned["carrier_capacity"] = _normalize_carrier_capacity_series(
+            cleaned["carrier_capacity"]
+        )
 
     # Harmonize categories
     cleaned = harmonize_categories(cleaned)
