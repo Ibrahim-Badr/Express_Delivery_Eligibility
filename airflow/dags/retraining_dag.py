@@ -6,10 +6,11 @@ import os
 import subprocess
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
+
+from airflow import DAG
 
 APP_PYTHON = os.getenv("APP_PYTHON_BIN", "/opt/app-venv/bin/python")
 APP_WORKDIR = os.getenv("APP_WORKDIR", "/opt/airflow")
